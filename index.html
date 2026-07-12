@@ -87,13 +87,9 @@
             <label>Peso <select id="propFontWeight"><option>400</option><option>600</option><option>700</option><option>800</option><option>900</option></select></label>
           </div>
           <label>Font
-            <select id="propFontFamily">
-              <option value="Arial">Arial</option>
-              <option value="Arial Bold">Arial Bold</option>
-              <option value="DIN Condensed Bold">DIN Condensed Bold</option>
-              <option value="DIN Condensed">DIN Condensed</option>
-            </select>
+            <select id="propFontFamily"></select>
           </label>
+          <p class="muted hint">I font usano i typeface installati su Hermes (DIN, Arial, ecc.). Se manca un font, il browser usa un sostituto. Valori dal JSON compaiono come “(dal layout)”.</p>
           <div class="grid2">
             <label>Colore <input id="propColor" type="color"></label>
             <label>Allinea H <select id="propAlign"><option>left</option><option>center</option><option>right</option></select></label>
@@ -173,6 +169,8 @@
     </div>
   </div>
 
+  <script src="./fonts.js"></script>
+  <script src="./text-layout.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
