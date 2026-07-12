@@ -1,0 +1,12 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    ROBY_LAYOUT_EDITOR_HOST=0.0.0.0 \
+    ROBY_LAYOUT_EDITOR_PORT=8765 \
+    ROBY_LAYOUT_CAMPAIGNS_ROOT=/campaigns
+
+EXPOSE 8765
+
+CMD ["python", "scripts/run_server.py"]
