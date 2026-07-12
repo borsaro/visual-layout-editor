@@ -12,14 +12,49 @@ const state = {
   selectedLibraryPaths: [],
   libraryFolders: [],
   currentLibraryFolder: localStorage.getItem('robyLayoutLibraryFolder') || '',
+  dirty: false,
+  loadedJsonFilename: null,
+  showSafeGuides: localStorage.getItem('robyShowSafeGuides') === '1',
 };
 let drag = null;
 let marquee = null;
+let propHistoryPending = false;
+let propHistoryTimer = null;
 const uid = () => 'layer_' + Math.random().toString(36).slice(2, 10);
 const selected = () => state.layers.find(l => l.id === state.selectedId) || null;
 const isSelected = (id) => state.selectedIds.includes(id);
 const selectedLayers = () => state.layers.filter(l => isSelected(l.id));
+const layerVisible = (l) => l && l.visible !== false;
 
+function setLayerVisible(id, visible){
+  const l = state.layers.find(x => x.id === id);
+  if(!l || layerVisible(l) === visible) return;
+  pushHistory();
+  l.visible = visible;
+  markDirty();
+  render();
+}
+function toggleLayerVisible(id){
+  const l = state.layers.find(x => x.id === id);
+  if(!l) return;
+  setLayerVisible(id, !layerVisible(l));
+}
+
+function markDirty(){ state.dirty = true; }
+function clearDirty(){ state.dirty = false; }
+function confirmDiscardChanges(){ return !state.dirty || confirm('Ci sono modifiche non salvate. Continuare?'); }
+function showToast(msg){
+  let t = $('toast');
+  if(!t){ t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(() => t.classList.remove('show'), 2600);
+}
+function currentLayoutExportName(){
+  if(state.currentLayoutPath) return state.currentLayoutPath.split('/').pop();
+  return state.loadedJsonFilename || 'layout.layout.json';
+}
 function snapshot(){ return JSON.stringify({canvas: state.canvas, layers: state.layers, selectedId: state.selectedId, selectedIds: state.selectedIds}); }
 function restoreSnapshot(snap){ const data=JSON.parse(snap); state.canvas=data.canvas; state.layers=data.layers; state.selectedId=data.selectedId || null; state.selectedIds=data.selectedIds || (state.selectedId?[state.selectedId]:[]); syncCanvasInputs(); render(); }
 function pushHistory(){ const snap=snapshot(); if(state.history.at(-1)!==snap){ state.history.push(snap); if(state.history.length>120) state.history.shift(); } state.future=[]; }
@@ -29,7 +64,7 @@ function selectOnly(id){ state.selectedId=id; state.selectedIds=id?[id]:[]; }
 function toggleSelect(id){ if(isSelected(id)){ state.selectedIds=state.selectedIds.filter(x=>x!==id); state.selectedId=state.selectedIds.at(-1)||null; } else { state.selectedIds.push(id); state.selectedId=id; } }
 
 function defaultText() {
-  return { id: uid(), type: 'text', name: 'Testo', x: 80, y: 80, w: 520, h: 90, z: nextZ(), opacity: 1, rotation: 0, text: 'Nuovo testo', fontSize: 48, fontWeight: '800', color: '#111111', align: 'left', lineHeight: 1.12 };
+  return { id: uid(), type: 'text', name: 'Testo', x: 80, y: 80, w: 520, h: 90, z: nextZ(), opacity: 1, rotation: 0, text: 'Nuovo testo', fontSize: 48, fontWeight: '800', fontFamily: 'Arial', color: '#111111', align: 'left', lineHeight: 1.12 };
 }
 function defaultRect() {
   return { id: uid(), type: 'rect', name: 'Box', x: 80, y: 220, w: 360, h: 120, z: nextZ(), opacity: 1, rotation: 0, fill: '#eb0029', stroke: '#eb0029', strokeWidth: 0, radius: 24 };
@@ -47,9 +82,13 @@ function render() {
   $('stage').style.transform = `scale(${state.zoom/100})`;
   const selCount = state.selectedIds.length ? ` · ${state.selectedIds.length} selezionati` : '';
   const fileInfo = state.currentLayoutPath ? ` · ${state.currentLayoutPath.split('/').pop()}` : ' · nessun file aperto';
-  $('canvasInfo').textContent = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}`;
+  const dirtyInfo = state.dirty ? ' · ● modificato' : '';
+  const hiddenCount = state.layers.filter(l => !layerVisible(l)).length;
+  const hiddenInfo = hiddenCount ? ` · ${hiddenCount} nascosti` : '';
+  $('canvasInfo').innerHTML = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount}${hiddenInfo} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}${dirtyInfo ? `<span class="dirtyMark">${dirtyInfo}</span>` : ''}`;
   canvas.innerHTML = '';
-  [...state.layers].sort((a,b)=>(a.z||0)-(b.z||0)).forEach(layer => canvas.appendChild(renderLayer(layer)));
+  [...state.layers].sort((a,b)=>(a.z||0)-(b.z||0)).filter(layerVisible).forEach(layer => canvas.appendChild(renderLayer(layer)));
+  if(state.showSafeGuides) canvas.appendChild(renderSafeGuides());
   renderLayerList();
   renderProps();
 }
@@ -96,21 +135,56 @@ function renderLayer(layer) {
 function renderLayerList(){
   const box=$('layersList'); box.innerHTML='';
   [...state.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(l=>{
-    const row=document.createElement('div'); row.className='layerItem'+(isSelected(l.id)?' active':'');
-    row.innerHTML=`<span>${escapeHtml(l.name||l.type)}</span><small>${l.type} · z${l.z||0}</small>`;
-    row.onclick=(ev)=>{ if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(l.id); else selectOnly(l.id); render();}; box.appendChild(row);
+    const row=document.createElement('div');
+    row.className='layerItem'+(isSelected(l.id)?' active':'')+(!layerVisible(l)?' hiddenLayer':'');
+    const eye=document.createElement('button');
+    eye.type='button';
+    eye.className='layerEye'+(layerVisible(l)?'':' off');
+    eye.title=layerVisible(l)?'Nascondi layer':'Mostra layer';
+    eye.textContent=layerVisible(l)?'◉':'○';
+    eye.onclick=(ev)=>{ ev.stopPropagation(); toggleLayerVisible(l.id); };
+    const info=document.createElement('div');
+    info.className='layerItemMain';
+    info.innerHTML=`<span>${escapeHtml(l.name||l.type)}</span><small>${l.type} · z${l.z||0}</small>`;
+    info.onclick=(ev)=>{ if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(l.id); else selectOnly(l.id); render(); };
+    row.append(eye, info);
+    box.appendChild(row);
   });
 }
 function renderProps(){
   const l=selected(); $('emptyProps').hidden=!!l; $('props').hidden=!l; if(!l) return;
   setVal('propName',l.name); setVal('propX',Math.round(l.x)); setVal('propY',Math.round(l.y)); setVal('propW',Math.round(l.w)); setVal('propH',Math.round(l.h)); setVal('propZ',l.z||1); setVal('propOpacity',l.opacity ?? 1); setVal('propRotation',l.rotation || 0);
+  const vis=$('propVisible'); if(vis) vis.checked = layerVisible(l);
   $('textProps').hidden=l.type!=='text'; $('boxProps').hidden=!(l.type==='rect'); $('imageProps').hidden=l.type!=='image';
-  if(l.type==='text'){ setVal('propText',l.text); setVal('propFontSize',l.fontSize); setVal('propFontWeight',l.fontWeight||'400'); setVal('propColor',l.color||'#000000'); setVal('propAlign',l.align||'left'); setVal('propVAlign',l.vAlign||'top'); setVal('propLineHeight',l.lineHeight||1.1); }
+  if(l.type==='text'){
+    const ff=l.fontFamily||l.font||'Arial';
+    const sel=$('propFontFamily');
+    if(sel && ![...sel.options].some(o=>o.value===ff)){
+      const opt=document.createElement('option'); opt.value=ff; opt.textContent=ff; sel.appendChild(opt);
+    }
+    setVal('propText',l.text); setVal('propFontSize',l.fontSize); setVal('propFontWeight',l.fontWeight||'400'); setVal('propFontFamily',ff); setVal('propColor',l.color||'#000000'); setVal('propAlign',l.align||'left'); setVal('propVAlign',l.vAlign||'top'); setVal('propLineHeight',l.lineHeight||1.1);
+  }
   if(l.type==='rect'){ setVal('propFill',rgbToHex(l.fill||'#eb0029')); setVal('propStroke',rgbToHex(l.stroke||'#eb0029')); setVal('propStrokeWidth',l.strokeWidth||0); setVal('propRadius',l.radius||0); }
   if(l.type==='image'){ setVal('propFit',l.fit||'contain'); }
 }
 function setVal(id,v){ const el=$(id); if(el) el.value = v ?? ''; }
-function updateProp(key, value){ const l=selected(); if(!l) return; pushHistory(); l[key]=value; render(); }
+function beginPropHistory(){ if(!propHistoryPending){ pushHistory(); propHistoryPending = true; } }
+function commitPropHistory(){ propHistoryPending = false; if(propHistoryTimer){ clearTimeout(propHistoryTimer); propHistoryTimer = null; } }
+function updateProp(key, value, opts={}){
+  const l=selected(); if(!l) return;
+  if(opts.history !== false){
+    if(opts.debounce){
+      beginPropHistory();
+      clearTimeout(propHistoryTimer);
+      propHistoryTimer = setTimeout(commitPropHistory, 450);
+    } else {
+      pushHistory();
+    }
+  }
+  l[key]=value;
+  markDirty();
+  render();
+}
 
 function startInlineTextEdit(ev, id){
   ev.preventDefault(); ev.stopPropagation();
@@ -128,6 +202,7 @@ function startInlineTextEdit(ev, id){
     el.classList.remove('editing');
     el.removeEventListener('blur', finish);
     el.removeEventListener('keydown', onKey);
+    markDirty();
     render();
   };
   const onKey = (e) => {
@@ -224,7 +299,7 @@ function onMove(ev){
   }
   render();
 }
-function endDrag(){ drag=null; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',endDrag); }
+function endDrag(){ drag=null; markDirty(); document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',endDrag); }
 
 function startMarquee(ev){
   if(ev.target !== $('canvas')) return;
@@ -244,7 +319,7 @@ function onMarqueeMove(ev){
 function endMarquee(){
   if(!marquee) return;
   const m={x:parseFloat(marquee.el.style.left)||0,y:parseFloat(marquee.el.style.top)||0,w:parseFloat(marquee.el.style.width)||0,h:parseFloat(marquee.el.style.height)||0};
-  const hits=state.layers.filter(l=> intersects(m,l)).map(l=>l.id);
+  const hits=state.layers.filter(l=> layerVisible(l) && intersects(m,l)).map(l=>l.id);
   if(!marquee.additive) state.selectedIds=[];
   hits.forEach(id=>{ if(!state.selectedIds.includes(id)) state.selectedIds.push(id); });
   state.selectedId=state.selectedIds.at(-1)||null;
@@ -254,10 +329,18 @@ function intersects(a,b){ return !(b.x > a.x+a.w || b.x+b.w < a.x || b.y > a.y+a
 
 function bindProps(){
   const numeric=['X','Y','W','H','Z','Opacity','Rotation','FontSize','LineHeight','StrokeWidth','Radius'];
-  numeric.forEach(k=>{ const id='prop'+k; $(id).addEventListener('input',()=>updateProp(k.charAt(0).toLowerCase()+k.slice(1), Number($(id).value))); });
+  numeric.forEach(k=>{
+    const id='prop'+k; const el=$(id); if(!el) return;
+    const key=k.charAt(0).toLowerCase()+k.slice(1);
+    el.addEventListener('focus', beginPropHistory);
+    el.addEventListener('input',()=>updateProp(key, Number(el.value), {history:false, debounce:true}));
+    el.addEventListener('blur', commitPropHistory);
+  });
   $('propName').oninput=()=>updateProp('name',$('propName').value);
+  $('propVisible')?.addEventListener('change', ()=>updateProp('visible', $('propVisible').checked));
   $('propText').oninput=()=>updateProp('text',$('propText').value);
   $('propFontWeight').onchange=()=>updateProp('fontWeight',$('propFontWeight').value);
+  $('propFontFamily').onchange=()=>updateProp('fontFamily',$('propFontFamily').value);
   $('propColor').oninput=()=>updateProp('color',$('propColor').value);
   $('propAlign').onchange=()=>updateProp('align',$('propAlign').value);
   $('propVAlign').onchange=()=>updateProp('vAlign',$('propVAlign').value);
@@ -270,14 +353,25 @@ function layoutPayload(){
   return { version:1, app:'roby-visual-layout-editor', canvas:state.canvas, layers:state.layers };
 }
 async function saveLayout(){
-  if(!state.currentLayoutPath){ alert('Nessun layout aperto da sovrascrivere. Carica prima un layout dal menu Layout pronti, oppure usa Salva con nome dopo aver caricato un layout.'); return; }
+  if(!state.currentLayoutPath){
+    downloadLayoutJson(currentLayoutExportName());
+    return;
+  }
   const res = await fetch('/api/save-layout', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: state.currentLayoutPath, layout: layoutPayload()})});
   const data = await res.json();
   if(!data.ok){ alert('Errore salvataggio: '+data.error); return; }
-  state.currentLayoutPath = data.path; render(); alert('Layout salvato:\n'+data.path);
+  state.currentLayoutPath = data.path;
+  clearDirty();
+  render();
+  showToast('Layout salvato: ' + data.path);
 }
 async function saveLayoutAs(){
-  if(!state.currentLayoutPath){ alert('Per salvare con nome nella stessa cartella devi prima caricare un layout esistente dal menu Layout pronti.'); return; }
+  if(!state.currentLayoutPath){
+    const name = prompt('Nome file JSON:', (state.loadedJsonFilename || 'layout').replace(/\.json$/i, '') + '-copy.layout.json');
+    if(!name) return;
+    downloadLayoutJson(name);
+    return;
+  }
   const current = state.currentLayoutPath.split('/').pop().replace(/\.layout\.json$/, '');
   const filename = prompt('Nome nuovo layout nella stessa cartella:', current + '-copy.layout.json');
   if(!filename) return;
@@ -285,17 +379,38 @@ async function saveLayoutAs(){
   const data = await res.json();
   if(!data.ok){ alert('Errore salvataggio con nome: '+data.error); return; }
   state.currentLayoutPath = data.path;
+  clearDirty();
   await refreshLayoutLibrary().catch(()=>{});
-  render(); alert('Layout salvato con nome:\n'+data.path);
+  render();
+  showToast('Layout salvato con nome: ' + data.path);
+}
+function downloadLayoutJson(filename){
+  const name = filename.endsWith('.json') ? filename : filename + '.layout.json';
+  downloadBlob(JSON.stringify(layoutPayload(), null, 2), name, 'application/json');
+  state.loadedJsonFilename = name;
+  clearDirty();
+  showToast('JSON scaricato: ' + name);
 }
 function loadJsonFile(file){
-  const r=new FileReader(); r.onload=()=>loadLayoutObject(JSON.parse(r.result), null); r.readAsText(file);
+  if(!confirmDiscardChanges()) return;
+  const r=new FileReader();
+  r.onload=()=>{ state.loadedJsonFilename = file.name; loadLayoutObject(JSON.parse(r.result), null); };
+  r.readAsText(file);
 }
 function loadLayoutObject(data, path=null){
   pushHistory();
-  state.canvas=data.canvas||state.canvas; state.layers=data.layers||[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=path; syncCanvasInputs(); render();
+  state.canvas=data.canvas||state.canvas;
+  state.layers=data.layers||[];
+  state.selectedId=null;
+  state.selectedIds=[];
+  state.currentLayoutPath=path;
+  if(path) state.loadedJsonFilename = path.split('/').pop();
+  clearDirty();
+  syncCanvasInputs();
+  render();
 }
 async function loadLayoutUrl(url){
+  if(!confirmDiscardChanges()) throw new Error('Apertura annullata');
   let data;
   if(url.startsWith('./')){
     const res = await fetch(url, {cache:'no-store'});
@@ -513,6 +628,7 @@ async function loadPreviewInto(box,item){
 async function renderLayoutToCanvas(ctx, layout, w, h){
   ctx.fillStyle=layout.canvas?.background || '#ffffff'; ctx.fillRect(0,0,w,h);
   for(const l of [...(layout.layers||[])].sort((a,b)=>(a.z||0)-(b.z||0))){
+    if(l.visible === false) continue;
     ctx.save(); ctx.globalAlpha=l.opacity ?? 1;
     const rot=(Number(l.rotation)||0)*Math.PI/180;
     if(rot){ ctx.translate(l.x+l.w/2,l.y+l.h/2); ctx.rotate(rot); ctx.translate(-(l.x+l.w/2),-(l.y+l.h/2)); }
@@ -576,7 +692,12 @@ async function exportSelectedLayouts(){
 async function exportPng(){
   const out=document.createElement('canvas'); out.width=state.canvas.width; out.height=state.canvas.height; const ctx=out.getContext('2d');
   await renderLayoutToCanvas(ctx, layoutPayload(), out.width, out.height);
-  out.toBlob(blob=>{ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='export.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500); }, 'image/png');
+  const name = safeExportName(currentLayoutExportName());
+  out.toBlob(blob=>{
+    if(!blob) return;
+    downloadBlobObject(blob, name);
+    showToast('PNG esportato: ' + name);
+  }, 'image/png');
 }
 function drawRoundRect(ctx,x,y,w,h,r,fill,stroke,sw){
   r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
@@ -607,11 +728,52 @@ function drawImageFit(ctx,img,l){
   const s= fit==='cover' ? Math.max(l.w/img.width,l.h/img.height) : Math.min(l.w/img.width,l.h/img.height);
   const w=img.width*s,h=img.height*s,x=l.x+(l.w-w)/2,y=l.y+(l.h-h)/2; ctx.save(); ctx.beginPath(); ctx.rect(l.x,l.y,l.w,l.h); ctx.clip(); ctx.drawImage(img,x,y,w,h); ctx.restore();
 }
-function readImageFile(file){ const r=new FileReader(); r.onload=()=>{ pushHistory(); state.layers.push(defaultImage(r.result,file.name)); selectOnly(state.layers.at(-1).id); render(); }; r.readAsDataURL(file); }
-function syncCanvasInputs(){ $('canvasW').value=state.canvas.width; $('canvasH').value=state.canvas.height; }
+function readImageFile(file){ const r=new FileReader(); r.onload=()=>{ pushHistory(); state.layers.push(defaultImage(r.result,file.name)); selectOnly(state.layers.at(-1).id); markDirty(); render(); }; r.readAsDataURL(file); }
+function syncCanvasInputs(){
+  $('canvasW').value=state.canvas.width;
+  $('canvasH').value=state.canvas.height;
+  const bg=$('canvasBg');
+  if(bg) bg.value = rgbToHex(state.canvas.background || '#ffffff');
+  const guides=$('toggleSafeGuides');
+  if(guides) guides.checked = !!state.showSafeGuides;
+}
+function renderSafeGuides(){
+  const inset = 48;
+  const el = document.createElement('div');
+  el.className = 'safeGuides';
+  Object.assign(el.style, { left: inset + 'px', top: inset + 'px', width: (state.canvas.width - inset * 2) + 'px', height: (state.canvas.height - inset * 2) + 'px' });
+  return el;
+}
 function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-function rgbToHex(v){ if(!v) return '#000000'; if(v.startsWith('#')) return v; return '#000000'; }
+function rgbToHex(v){
+  if(!v) return '#000000';
+  if(v.startsWith('#')){
+    if(v.length === 4) return '#' + [...v.slice(1)].map(c => c + c).join('');
+    return v.slice(0, 7);
+  }
+  const m = String(v).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if(!m) return '#000000';
+  const hex = (n) => Number(n).toString(16).padStart(2, '0');
+  return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
+}
 
+
+function alignSelectedToCanvas(action){
+  const layers=selectedLayers();
+  if(!layers.length) return;
+  pushHistory();
+  const cw=state.canvas.width, ch=state.canvas.height;
+  layers.forEach(l=>{
+    if(action==='left') l.x=0;
+    if(action==='hcenter') l.x=(cw-l.w)/2;
+    if(action==='right') l.x=cw-l.w;
+    if(action==='top') l.y=0;
+    if(action==='vcenter') l.y=(ch-l.h)/2;
+    if(action==='bottom') l.y=ch-l.h;
+  });
+  markDirty();
+  render();
+}
 
 function alignSelectedLayers(action){
   const layers=selectedLayers();
@@ -638,7 +800,14 @@ function alignSelectedLayers(action){
     const gap=(last.y+last.h-first.y-totalH)/(sortedY.length-1);
     let y=first.y; sortedY.forEach(l=>{l.y=y; y+=l.h+gap;});
   }
+  markDirty();
   render();
+}
+
+function isTypingTarget(el){
+  if(!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
 function bindKeyboardShortcuts(){
@@ -646,16 +815,54 @@ function bindKeyboardShortcuts(){
     if(ev.target?.closest?.('.layer, .resizeHandle, #canvas')) ev.preventDefault();
   }, true);
   document.addEventListener('keydown', (ev)=>{
+    if(isTypingTarget(ev.target)) return;
     const mod = ev.metaKey || ev.ctrlKey;
-    if(!mod) return;
     const key = ev.key.toLowerCase();
-    if(key === 'z'){
+    if(mod && key === 's'){
+      ev.preventDefault();
+      saveLayout();
+      return;
+    }
+    if(mod && key === 'z'){
       ev.preventDefault();
       if(ev.shiftKey) redo(); else undo();
-    } else if(key === 'y'){
+      markDirty();
+      return;
+    }
+    if(mod && key === 'y'){
       ev.preventDefault();
       redo();
+      markDirty();
+      return;
     }
+    if(mod && key === 'd'){
+      ev.preventDefault();
+      $('duplicateBtn')?.click();
+      return;
+    }
+    if((ev.key === 'Delete' || ev.key === 'Backspace') && state.selectedIds.length){
+      ev.preventDefault();
+      $('deleteBtn')?.click();
+      return;
+    }
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(ev.key) && state.selectedIds.length){
+      ev.preventDefault();
+      const step = ev.shiftKey ? 10 : 1;
+      pushHistory();
+      selectedLayers().forEach(l=>{
+        if(ev.key === 'ArrowLeft') l.x -= step;
+        if(ev.key === 'ArrowRight') l.x += step;
+        if(ev.key === 'ArrowUp') l.y -= step;
+        if(ev.key === 'ArrowDown') l.y += step;
+      });
+      markDirty();
+      render();
+    }
+  });
+  window.addEventListener('beforeunload', (ev)=>{
+    if(!state.dirty) return;
+    ev.preventDefault();
+    ev.returnValue = '';
   });
 }
 
@@ -664,8 +871,8 @@ function init(){
   $('canvas').addEventListener('contextmenu', (ev)=>{ if(ev.target.closest?.('.layer')) ev.preventDefault(); });
   $('canvas').addEventListener('click',(ev)=>{ if(ev.target===$('canvas')){state.selectedId=null; state.selectedIds=[]; render();} });
   $('zoomRange').oninput=()=>{state.zoom=Number($('zoomRange').value); render();};
-  $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); render();};
-  $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); render();};
+  $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
+  $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('imageInput').onchange=e=>{ if(e.target.files[0]) readImageFile(e.target.files[0]); e.target.value=''; };
   $('jsonInput').onchange=e=>{ if(e.target.files[0]) loadJsonFile(e.target.files[0]); e.target.value=''; };
   $('saveLayoutBtn').onclick=saveLayout; $('saveAsLayoutBtn').onclick=saveLayoutAs; $('exportPngBtn').onclick=exportPng;
@@ -677,11 +884,14 @@ function init(){
   $('librarySearch').oninput=renderLibraryGrid;
   $('libraryKindFilter').onchange=renderLibraryGrid;
   document.querySelectorAll('[data-align-action]').forEach(btn=>btn.onclick=()=>alignSelectedLayers(btn.dataset.alignAction));
-  $('deleteBtn').onclick=()=>{ if(!state.selectedIds.length) return; pushHistory(); state.layers=state.layers.filter(x=>!isSelected(x.id)); state.selectedId=null; state.selectedIds=[]; render(); };
-  $('duplicateBtn').onclick=()=>{ const ls=selectedLayers(); if(!ls.length) return; pushHistory(); const copies=ls.map(l=>{ const c=JSON.parse(JSON.stringify(l)); c.id=uid(); c.name=(c.name||c.type)+' copy'; c.x+=24; c.y+=24; c.z=nextZ(); return c; }); state.layers.push(...copies); state.selectedIds=copies.map(c=>c.id); state.selectedId=state.selectedIds.at(-1); render(); };
+  document.querySelectorAll('[data-canvas-align]').forEach(btn=>btn.onclick=()=>alignSelectedToCanvas(btn.dataset.canvasAlign));
+  $('deleteBtn').onclick=()=>{ if(!state.selectedIds.length) return; pushHistory(); state.layers=state.layers.filter(x=>!isSelected(x.id)); state.selectedId=null; state.selectedIds=[]; markDirty(); render(); };
+  $('duplicateBtn').onclick=()=>{ const ls=selectedLayers(); if(!ls.length) return; pushHistory(); const copies=ls.map(l=>{ const c=JSON.parse(JSON.stringify(l)); c.id=uid(); c.name=(c.name||c.type)+' copy'; c.x+=24; c.y+=24; c.z=nextZ(); return c; }); state.layers.push(...copies); state.selectedIds=copies.map(c=>c.id); state.selectedId=state.selectedIds.at(-1); markDirty(); render(); };
   $('presetSelect').onchange=()=>{ const v=$('presetSelect').value; if(v!=='custom'){ const [w,h]=v.split('x').map(Number); $('canvasW').value=w; $('canvasH').value=h; }};
-  $('resizeCanvasBtn').onclick=()=>{ pushHistory(); state.canvas.width=Number($('canvasW').value); state.canvas.height=Number($('canvasH').value); render(); };
-  $('newBtn').onclick=()=>{ if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; render(); }};
+  $('resizeCanvasBtn').onclick=()=>{ pushHistory(); state.canvas.width=Number($('canvasW').value); state.canvas.height=Number($('canvasH').value); markDirty(); render(); };
+  $('canvasBg')?.addEventListener('input', ()=>{ pushHistory(); state.canvas.background = $('canvasBg').value; markDirty(); render(); });
+  $('toggleSafeGuides')?.addEventListener('change', (ev)=>{ state.showSafeGuides = ev.target.checked; localStorage.setItem('robyShowSafeGuides', state.showSafeGuides ? '1' : '0'); render(); });
+  $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearDirty(); render(); }};
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs(); loadReadyLayouts(); render();
 }
 init();

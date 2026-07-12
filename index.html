@@ -39,6 +39,8 @@
         <label>H <input id="canvasH" type="number" value="1350"></label>
       </div>
       <button id="resizeCanvasBtn">Applica formato</button>
+      <label>Sfondo <input id="canvasBg" type="color" value="#fff7ea"></label>
+      <label class="toggleRow"><input id="toggleSafeGuides" type="checkbox"> Guide safe zone (48px)</label>
 
       <h2>Aggiungi</h2>
       <button id="addTextBtn">+ Testo</button>
@@ -66,6 +68,7 @@
       <div id="emptyProps" class="muted">Seleziona un layer.</div>
       <div id="props" hidden>
         <label>Nome <input id="propName"></label>
+        <label class="toggleRow"><input id="propVisible" type="checkbox" checked> Layer visibile</label>
         <div class="grid2">
           <label>X <input id="propX" type="number"></label>
           <label>Y <input id="propY" type="number"></label>
@@ -83,6 +86,14 @@
             <label>Font size <input id="propFontSize" type="number"></label>
             <label>Peso <select id="propFontWeight"><option>400</option><option>600</option><option>700</option><option>800</option><option>900</option></select></label>
           </div>
+          <label>Font
+            <select id="propFontFamily">
+              <option value="Arial">Arial</option>
+              <option value="Arial Bold">Arial Bold</option>
+              <option value="DIN Condensed Bold">DIN Condensed Bold</option>
+              <option value="DIN Condensed">DIN Condensed</option>
+            </select>
+          </label>
           <div class="grid2">
             <label>Colore <input id="propColor" type="color"></label>
             <label>Allinea H <select id="propAlign"><option>left</option><option>center</option><option>right</option></select></label>
@@ -104,6 +115,16 @@
         </div>
         <div id="imageProps">
           <label>Fit <select id="propFit"><option>contain</option><option>cover</option><option>stretch</option></select></label>
+          <p class="muted hint">Maniglie: Shift = resize libero · Ctrl/Cmd = crop immagine</p>
+        </div>
+        <h2>Allinea al canvas</h2>
+        <div class="alignActions">
+          <button data-canvas-align="left">Sinistra</button>
+          <button data-canvas-align="hcenter">Centro H</button>
+          <button data-canvas-align="right">Destra</button>
+          <button data-canvas-align="top">Alto</button>
+          <button data-canvas-align="vcenter">Centro V</button>
+          <button data-canvas-align="bottom">Basso</button>
         </div>
         <h2>Allinea oggetti</h2>
         <div class="alignActions">
