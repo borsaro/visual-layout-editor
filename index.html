@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roby Visual Layout Editor</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>Roby Visual Layout Editor</strong>
+      <span>static feed/story editor · JSON → PNG</span>
+    </div>
+    <div class="actions">
+      <button id="newBtn">Nuovo</button>
+      <button id="openLibraryBtn">Libreria layout</button>
+      <label class="button">Carica JSON<input id="jsonInput" type="file" accept="application/json,.json" hidden></label>
+      <button id="saveLayoutBtn">Salva layout</button>
+      <button id="saveAsLayoutBtn">Salva con nome</button>
+      <button id="exportPngBtn" class="primary">Export PNG</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <aside class="panel left">
+      <h2>Canvas</h2>
+      <div class="row">
+        <label>Preset</label>
+        <select id="presetSelect">
+          <option value="1080x1350">Feed 1080×1350</option>
+          <option value="1080x1920">Story/Reel 1080×1920</option>
+          <option value="1080x1080">Square 1080×1080</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="grid2">
+        <label>W <input id="canvasW" type="number" value="1080"></label>
+        <label>H <input id="canvasH" type="number" value="1350"></label>
+      </div>
+      <button id="resizeCanvasBtn">Applica formato</button>
+
+      <h2>Aggiungi</h2>
+      <button id="addTextBtn">+ Testo</button>
+      <button id="addRectBtn">+ Box</button>
+      <label class="button wide">+ Immagine<input id="imageInput" type="file" accept="image/*" hidden></label>
+
+      <h2>Layer</h2>
+      <div id="layersList" class="layers"></div>
+    </aside>
+
+    <section class="stageWrap">
+      <div class="stageToolbar">
+        <label>Zoom <input id="zoomRange" type="range" min="20" max="100" value="42"></label>
+        <span id="canvasInfo"></span>
+      </div>
+      <div class="stageScroller">
+        <div id="stage" class="stage">
+          <div id="canvas" class="canvas"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel right">
+      <h2>Proprietà</h2>
+      <div id="emptyProps" class="muted">Seleziona un layer.</div>
+      <div id="props" hidden>
+        <label>Nome <input id="propName"></label>
+        <div class="grid2">
+          <label>X <input id="propX" type="number"></label>
+          <label>Y <input id="propY" type="number"></label>
+          <label>W <input id="propW" type="number"></label>
+          <label>H <input id="propH" type="number"></label>
+        </div>
+        <div class="grid2">
+          <label>Z <input id="propZ" type="number"></label>
+          <label>Opacità <input id="propOpacity" type="number" min="0" max="1" step="0.05"></label>
+        </div>
+        <label>Rotazione ° <input id="propRotation" type="number" step="1" value="0"></label>
+        <div id="textProps">
+          <label>Testo <textarea id="propText" rows="4"></textarea></label>
+          <div class="grid2">
+            <label>Font size <input id="propFontSize" type="number"></label>
+            <label>Peso <select id="propFontWeight"><option>400</option><option>600</option><option>700</option><option>800</option><option>900</option></select></label>
+          </div>
+          <div class="grid2">
+            <label>Colore <input id="propColor" type="color"></label>
+            <label>Allinea H <select id="propAlign"><option>left</option><option>center</option><option>right</option></select></label>
+          </div>
+          <div class="grid2">
+            <label>Allinea V <select id="propVAlign"><option value="top">top</option><option value="middle">middle</option><option value="bottom">bottom</option></select></label>
+            <label>Line height <input id="propLineHeight" type="number" step="0.05"></label>
+          </div>
+        </div>
+        <div id="boxProps">
+          <div class="grid2">
+            <label>Fill <input id="propFill" type="color"></label>
+            <label>Bordo <input id="propStroke" type="color"></label>
+          </div>
+          <div class="grid2">
+            <label>Stroke W <input id="propStrokeWidth" type="number"></label>
+            <label>Radius <input id="propRadius" type="number"></label>
+          </div>
+        </div>
+        <div id="imageProps">
+          <label>Fit <select id="propFit"><option>contain</option><option>cover</option><option>stretch</option></select></label>
+        </div>
+        <h2>Allinea oggetti</h2>
+        <div class="alignActions">
+          <button data-align-action="left">Sinistra</button>
+          <button data-align-action="hcenter">Centro H</button>
+          <button data-align-action="right">Destra</button>
+          <button data-align-action="top">Alto</button>
+          <button data-align-action="vcenter">Centro V</button>
+          <button data-align-action="bottom">Basso</button>
+          <button data-align-action="distributeH">Distribuisci H</button>
+          <button data-align-action="distributeV">Distribuisci V</button>
+        </div>
+        <div class="propActions">
+          <button id="duplicateBtn">Duplica</button>
+          <button id="deleteBtn" class="danger">Elimina</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="layoutLibraryModal" class="modal" hidden>
+    <div class="modalCard">
+      <div class="modalHead">
+        <div>
+          <strong>Libreria layout</strong>
+          <span id="libraryMeta">Scannerizza tutti i .layout.json in campaigns</span>
+        </div>
+        <div class="modalActions">
+          <select id="libraryKindFilter" title="Filtro libreria">
+            <option value="layout" selected>Solo JSON</option>
+            <option value="image">Solo immagini</option>
+            <option value="all">Tutto</option>
+          </select>
+          <input id="librarySearch" placeholder="Cerca layout…" />
+          <label id="librarySelectAllWrap" class="selectAllControl" title="Seleziona o deseleziona tutti i layout visibili">
+            <input id="librarySelectAllCheckbox" type="checkbox" />
+            <span id="librarySelectAllText">Seleziona tutto</span>
+          </label>
+          <button id="bulkExportBtn" class="primary" disabled>Export selezionati</button>
+          <button id="refreshLibraryBtn">Aggiorna</button>
+          <button id="closeLibraryBtn">Chiudi</button>
+        </div>
+      </div>
+      <div id="libraryBreadcrumb" class="libraryBreadcrumb"></div>
+      <div id="layoutGrid" class="layoutGrid"></div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

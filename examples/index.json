@@ -1,0 +1,22 @@
+[
+  {
+    "name": "LiveOak Vulcano — 02 confronto tre misure",
+    "path": "./examples/liveoak-vulcano-production-fix/02_feed_confronto_tre_misure.layout.json"
+  },
+  {
+    "name": "LiveOak Vulcano — 03 focus grande",
+    "path": "./examples/liveoak-vulcano-production-fix/03_feed_focus_grande.layout.json"
+  },
+  {
+    "name": "LiveOak Vulcano — 04 focus medio",
+    "path": "./examples/liveoak-vulcano-production-fix/04_feed_focus_medio.layout.json"
+  },
+  {
+    "name": "LiveOak Vulcano — 05 focus piccolo",
+    "path": "./examples/liveoak-vulcano-production-fix/05_feed_focus_piccolo.layout.json"
+  },
+  {
+    "name": "LiveOak Vulcano — reel cover",
+    "path": "./examples/liveoak-vulcano-production-fix/reel_hero_cover_1080x1920.layout.json"
+  }
+]
