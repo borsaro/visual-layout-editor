@@ -13,6 +13,7 @@
       <span>static feed/story editor · JSON → PNG</span>
     </div>
     <div class="actions">
+      <button id="reloadBtn" class="iconBtn" title="Ricarica layout da disco (ultima versione salvata)" aria-label="Aggiorna">↻</button>
       <button id="newBtn">Nuovo</button>
       <button id="openLibraryBtn">Libreria layout</button>
       <label class="button">Carica JSON<input id="jsonInput" type="file" accept="application/json,.json" hidden></label>
@@ -84,11 +85,40 @@
           <label>Testo <textarea id="propText" rows="4"></textarea></label>
           <div class="grid2">
             <label>Font size <input id="propFontSize" type="number"></label>
-            <label>Peso <select id="propFontWeight"><option>400</option><option>600</option><option>700</option><option>800</option><option>900</option></select></label>
+            <label>Peso
+              <select id="propFontWeight">
+                <option value="100">100 Thin</option>
+                <option value="200">200 Extra Light</option>
+                <option value="300">300 Light</option>
+                <option value="400">400 Regular</option>
+                <option value="500">500 Medium</option>
+                <option value="600">600 Semi Bold</option>
+                <option value="700">700 Bold</option>
+                <option value="800">800 Extra Bold</option>
+                <option value="900">900 Black</option>
+              </select>
+            </label>
           </div>
           <label>Font
             <select id="propFontFamily"></select>
           </label>
+          <div class="styleToggles" id="textStyleToggles">
+            <button type="button" data-style-toggle="italic" title="Corsivo" class="styleToggle italic">I</button>
+            <button type="button" data-style-toggle="underline" title="Sottolineato" class="styleToggle underline">U</button>
+            <button type="button" data-style-toggle="strikethrough" title="Barrato" class="styleToggle strike">S</button>
+          </div>
+          <div class="grid2">
+            <label>Trasforma
+              <select id="propTextTransform">
+                <option value="none">Nessuna</option>
+                <option value="uppercase">ALL CAPS</option>
+                <option value="capitalize">Maiuscole parole</option>
+                <option value="camelCase">camelCase</option>
+                <option value="lowercase">minuscolo</option>
+              </select>
+            </label>
+            <label>Letter spacing <input id="propLetterSpacing" type="number" step="0.5" value="0"></label>
+          </div>
           <p class="muted hint">I font usano i typeface installati su Hermes (DIN, Arial, ecc.). Se manca un font, il browser usa un sostituto. Valori dal JSON compaiono come “(dal layout)”.</p>
           <div class="grid2">
             <label>Colore <input id="propColor" type="color"></label>
@@ -170,6 +200,7 @@
   </div>
 
   <script src="./fonts.js"></script>
+  <script src="./text-style.js"></script>
   <script src="./text-layout.js"></script>
   <script src="./app.js"></script>
 </body>

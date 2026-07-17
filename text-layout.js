@@ -12,16 +12,23 @@ function textFontCss(layer) {
   const family = layer.fontFamily || layer.font || 'Arial';
   const size = Number(layer.fontSize) || 32;
   const weight = layer.fontWeight || 400;
-  return `${weight} ${size}px "${family}", Arial, sans-serif`;
+  const style = layer.fontStyle === 'italic' ? 'italic' : 'normal';
+  return `${style} ${weight} ${size}px "${family}", Arial, sans-serif`;
+}
+
+function applyCanvasLetterSpacing(ctx, layer) {
+  const spacing = Number(layer.letterSpacing) || 0;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`;
 }
 
 function measureTextLayout(layer) {
   const fontSize = Number(layer.fontSize) || 32;
   const lineRatio = Number(layer.lineHeight) || 1.1;
   const lh = fontSize * lineRatio;
-  const lines = String(layer.text || '').split('\n');
+  const lines = displayText(layer).split('\n');
   const ctx = getMeasureCtx();
   ctx.font = textFontCss(layer);
+  applyCanvasLetterSpacing(ctx, layer);
 
   const metrics = lines.map((line) => {
     const m = ctx.measureText(line || '\u00a0');
@@ -58,6 +65,7 @@ function drawCanvasText(ctx, layer) {
   const offsetY = textBlockOffsetY(layer, layout);
   ctx.fillStyle = layer.color || '#000';
   ctx.font = textFontCss(layer);
+  applyCanvasLetterSpacing(ctx, layer);
   ctx.textBaseline = 'alphabetic';
 
   layout.lines.forEach((line, i) => {
@@ -66,6 +74,8 @@ function drawCanvasText(ctx, layer) {
     if (layer.align === 'right') x = layer.x + layer.w;
     ctx.textAlign = layer.align || 'left';
     const baselineY = layer.y + offsetY + layout.blockAscent + i * layout.lh;
+    const m = layout.metrics[i] || { ascent: layout.fontSize * 0.78, descent: layout.fontSize * 0.22 };
     ctx.fillText(line, x, baselineY, layer.w);
+    drawTextDecorations(ctx, layer, line, x, baselineY, m.ascent, m.descent);
   });
 }

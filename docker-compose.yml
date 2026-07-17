@@ -13,7 +13,7 @@ services:
       ROBY_LAYOUT_CAMPAIGNS_ROOT: "/campaigns"
     volumes:
       - .:/app
-      - ${ROBY_LAYOUT_CAMPAIGNS_HOST_PATH:-/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER/Liveoakbbq/campaigns}:/campaigns
+      - ${ROBY_LAYOUT_CAMPAIGNS_HOST_PATH:-/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER}:/campaigns
     healthcheck:
       test:
         [

@@ -76,3 +76,12 @@
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:#1e2430;border:1px solid var(--line);color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:2000000;max-width:min(90vw,520px)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .dirtyMark{color:var(--accent);font-weight:800}
+.iconBtn{width:38px;padding:8px 0;font-size:18px;line-height:1}
+.iconBtn.spinning{animation:reloadSpin .6s linear}
+@keyframes reloadSpin{to{transform:rotate(360deg)}}
+.styleToggles{display:flex;gap:6px;margin-top:2px}
+.styleToggle{flex:1;min-width:0;font-weight:800;padding:7px 6px}
+.styleToggle.italic{font-style:italic}
+.styleToggle.underline{text-decoration:underline}
+.styleToggle.strike{text-decoration:line-through}
+.styleToggle.active{background:rgba(79,140,255,.22);border-color:var(--blue);color:#fff}

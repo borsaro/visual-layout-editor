@@ -13,7 +13,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 CAMPAIGNS_ROOT = Path(os.environ.get(
     'ROBY_LAYOUT_CAMPAIGNS_ROOT',
-    '/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER/Liveoakbbq/campaigns'
+    '/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER'
 )).resolve()
 FOLDER_ALIASES = {
     'liveoakbbq-napoleon-freestyle-425': 'napoleon-freestyle-425',

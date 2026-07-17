@@ -65,7 +65,12 @@ function selectOnly(id){ state.selectedId=id; state.selectedIds=id?[id]:[]; }
 function toggleSelect(id){ if(isSelected(id)){ state.selectedIds=state.selectedIds.filter(x=>x!==id); state.selectedId=state.selectedIds.at(-1)||null; } else { state.selectedIds.push(id); state.selectedId=id; } }
 
 function defaultText() {
-  return { id: uid(), type: 'text', name: 'Testo', x: 80, y: 80, w: 520, h: 90, z: nextZ(), opacity: 1, rotation: 0, text: 'Nuovo testo', fontSize: 48, fontWeight: '800', fontFamily: 'Arial', color: '#111111', align: 'left', lineHeight: 1.12 };
+  return {
+    id: uid(), type: 'text', name: 'Testo', x: 80, y: 80, w: 520, h: 90, z: nextZ(), opacity: 1, rotation: 0,
+    text: 'Nuovo testo', fontSize: 48, fontWeight: '800', fontFamily: 'Arial', fontStyle: 'normal',
+    underline: false, strikethrough: false, textTransform: 'none', letterSpacing: 0,
+    color: '#111111', align: 'left', lineHeight: 1.12,
+  };
 }
 function defaultRect() {
   return { id: uid(), type: 'rect', name: 'Box', x: 80, y: 220, w: 360, h: 120, z: nextZ(), opacity: 1, rotation: 0, fill: '#eb0029', stroke: '#eb0029', strokeWidth: 0, radius: 24 };
@@ -107,7 +112,6 @@ function renderLayer(layer) {
   if (layer.type === 'text') {
     const layout = measureTextLayout(layer);
     const padTop = textBlockDomPaddingTop(layer, layout);
-    el.textContent = layer.text || '';
     Object.assign(el.style, {
       fontFamily: layer.fontFamily || layer.font || 'Arial',
       fontSize: layer.fontSize + 'px',
@@ -121,6 +125,7 @@ function renderLayer(layer) {
       paddingTop: padTop + 'px',
       overflow: 'hidden',
     });
+    applyTextStyleDom(el, layer);
     el.addEventListener('dblclick', (ev)=>startInlineTextEdit(ev, layer.id));
   } else if (layer.type === 'rect') {
     Object.assign(el.style, { background: layer.fill || 'transparent', border: `${layer.strokeWidth||0}px solid ${layer.stroke||'transparent'}`, borderRadius: (layer.radius||0)+'px' });
@@ -174,6 +179,8 @@ function renderProps(){
     const ff=l.fontFamily||l.font||'Arial';
     populateFontSelect(ff);
     setVal('propText',l.text); setVal('propFontSize',l.fontSize); setVal('propFontWeight',l.fontWeight||'400'); setVal('propFontFamily',ff); setVal('propColor',l.color||'#000000'); setVal('propAlign',l.align||'left'); setVal('propVAlign',l.vAlign||'top'); setVal('propLineHeight',l.lineHeight||1.1);
+    setVal('propTextTransform', l.textTransform || 'none'); setVal('propLetterSpacing', l.letterSpacing ?? 0);
+    syncTextStyleToggles(l);
   }
   if(l.type==='rect'){ setVal('propFill',rgbToHex(l.fill||'#eb0029')); setVal('propStroke',rgbToHex(l.stroke||'#eb0029')); setVal('propStrokeWidth',l.strokeWidth||0); setVal('propRadius',l.radius||0); }
   if(l.type==='image'){ setVal('propFit',l.fit||'contain'); }
@@ -197,6 +204,14 @@ function updateProp(key, value, opts={}){
   render();
 }
 
+function syncTextStyleToggles(layer){
+  document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
+    const key = btn.dataset.styleToggle;
+    const on = key === 'italic' ? layer.fontStyle === 'italic' : !!layer[key];
+    btn.classList.toggle('active', on);
+  });
+}
+
 function startInlineTextEdit(ev, id){
   ev.preventDefault(); ev.stopPropagation();
   const layer = state.layers.find(l=>l.id===id); if(!layer || layer.type!=='text') return;
@@ -204,6 +219,8 @@ function startInlineTextEdit(ev, id){
   const el = document.querySelector(`.layer[data-id="${id}"]`); if(!el) return;
   pushHistory();
   el.classList.add('editing');
+  el.textContent = layer.text || '';
+  el.style.textTransform = 'none';
   el.contentEditable = 'true';
   el.focus();
   document.execCommand?.('selectAll', false, null);
@@ -339,7 +356,7 @@ function endMarquee(){
 function intersects(a,b){ return !(b.x > a.x+a.w || b.x+b.w < a.x || b.y > a.y+a.h || b.y+b.h < a.y); }
 
 function bindProps(){
-  const numeric=['X','Y','W','H','Z','Opacity','Rotation','FontSize','LineHeight','StrokeWidth','Radius'];
+  const numeric=['X','Y','W','H','Z','Opacity','Rotation','FontSize','LineHeight','LetterSpacing','StrokeWidth','Radius'];
   numeric.forEach(k=>{
     const id='prop'+k; const el=$(id); if(!el) return;
     const key=k.charAt(0).toLowerCase()+k.slice(1);
@@ -352,12 +369,24 @@ function bindProps(){
   $('propText').oninput=()=>updateProp('text',$('propText').value);
   $('propFontWeight').onchange=()=>updateProp('fontWeight',$('propFontWeight').value);
   $('propFontFamily').onchange=()=>updateProp('fontFamily',$('propFontFamily').value);
+  $('propTextTransform').onchange=()=>updateProp('textTransform',$('propTextTransform').value);
   $('propColor').oninput=()=>updateProp('color',$('propColor').value);
   $('propAlign').onchange=()=>updateProp('align',$('propAlign').value);
   $('propVAlign').onchange=()=>updateProp('vAlign',$('propVAlign').value);
   $('propFill').oninput=()=>updateProp('fill',$('propFill').value);
   $('propStroke').oninput=()=>updateProp('stroke',$('propStroke').value);
   $('propFit').onchange=()=>updateProp('fit',$('propFit').value);
+  document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
+    btn.onclick=()=>{
+      const l=selected(); if(!l || l.type!=='text') return;
+      pushHistory();
+      const key=btn.dataset.styleToggle;
+      if(key==='italic') l.fontStyle = l.fontStyle==='italic' ? 'normal' : 'italic';
+      else l[key] = !l[key];
+      markDirty();
+      render();
+    };
+  });
 }
 
 function layoutPayload(){
@@ -420,20 +449,40 @@ function loadLayoutObject(data, path=null){
   syncCanvasInputs();
   render();
 }
-async function loadLayoutUrl(url){
-  if(!confirmDiscardChanges()) throw new Error('Apertura annullata');
-  let data;
-  if(url.startsWith('./')){
-    const res = await fetch(url, {cache:'no-store'});
-    if(!res.ok) throw new Error(`HTTP ${res.status} loading ${url}`);
-    data = await res.json();
-    loadLayoutObject(data, url);
-  } else {
-    const res = await fetch('/api/load-layout?path=' + encodeURIComponent(url), {cache:'no-store'});
-    if(!res.ok) throw new Error(`HTTP ${res.status} loading ${url}`);
-    const payload = await res.json();
-    if(!payload.ok) throw new Error(payload.error || 'Load failed');
-    loadLayoutObject(payload.layout, payload.path);
+async function fetchLayoutFromPath(path){
+  if(path.startsWith('./')){
+    const res = await fetch(path, {cache:'no-store'});
+    if(!res.ok) throw new Error(`HTTP ${res.status} loading ${path}`);
+    return { layout: await res.json(), path };
+  }
+  const res = await fetch('/api/load-layout?path=' + encodeURIComponent(path), {cache:'no-store'});
+  if(!res.ok) throw new Error(`HTTP ${res.status} loading ${path}`);
+  const payload = await res.json();
+  if(!payload.ok) throw new Error(payload.error || 'Load failed');
+  return { layout: payload.layout, path: payload.path };
+}
+async function loadLayoutUrl(url, opts={}){
+  if(!opts.skipConfirm && !confirmDiscardChanges()) throw new Error('Apertura annullata');
+  const { layout, path } = await fetchLayoutFromPath(url);
+  loadLayoutObject(layout, path);
+}
+async function reloadCurrentLayout(){
+  const path = state.currentLayoutPath;
+  if(!path){
+    showToast('Nessun layout su disco da ricaricare. Apri un layout dalla libreria.');
+    return;
+  }
+  if(!confirmDiscardChanges()) return;
+  const btn = $('reloadBtn');
+  btn?.classList.add('spinning');
+  try{
+    const { layout, path: loadedPath } = await fetchLayoutFromPath(path);
+    loadLayoutObject(layout, loadedPath);
+    showToast('Layout ricaricato da disco');
+  }catch(e){
+    alert('Errore ricarica: ' + e.message);
+  }finally{
+    setTimeout(()=>btn?.classList.remove('spinning'), 600);
   }
 }
 async function refreshLayoutLibrary(){
@@ -890,6 +939,7 @@ function init(){
   $('resizeCanvasBtn').onclick=()=>{ pushHistory(); state.canvas.width=Number($('canvasW').value); state.canvas.height=Number($('canvasH').value); markDirty(); render(); };
   $('canvasBg')?.addEventListener('input', ()=>{ pushHistory(); state.canvas.background = $('canvasBg').value; markDirty(); render(); });
   $('toggleSafeGuides')?.addEventListener('change', (ev)=>{ state.showSafeGuides = ev.target.checked; localStorage.setItem('robyShowSafeGuides', state.showSafeGuides ? '1' : '0'); render(); });
+  $('reloadBtn').onclick=()=>reloadCurrentLayout();
   $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearDirty(); render(); }};
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs(); populateFontSelect(); loadReadyLayouts(); render();
 }
