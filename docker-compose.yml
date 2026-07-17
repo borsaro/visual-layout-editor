@@ -2,14 +2,27 @@ services:
   roby-visual-layout-editor:
     build:
       context: .
+    image: roby-visual-layout-editor:latest
     container_name: roby-visual-layout-editor
     restart: unless-stopped
     ports:
-      - "8765:8765"
+      - "${ROBY_LAYOUT_EDITOR_PORT:-8765}:8765"
     environment:
       ROBY_LAYOUT_EDITOR_HOST: "0.0.0.0"
       ROBY_LAYOUT_EDITOR_PORT: "8765"
       ROBY_LAYOUT_CAMPAIGNS_ROOT: "/campaigns"
     volumes:
       - .:/app
-      - /Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER/Liveoakbbq/campaigns:/campaigns
+      - ${ROBY_LAYOUT_CAMPAIGNS_HOST_PATH:-/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER/Liveoakbbq/campaigns}:/campaigns
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

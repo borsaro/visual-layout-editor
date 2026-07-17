@@ -8,15 +8,45 @@ Roby continua a generare asset e codice sorgente seguendo le regole del brand. I
 
 ## Avvio
 
+### Docker (consigliato — persistente e accessibile in LAN)
+
 ```bash
 cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
-python3 scripts/run_server.py
+docker compose up -d --build
 ```
 
 Poi apri:
 
 ```text
 http://127.0.0.1:8765
+```
+
+Da un altro dispositivo sulla stessa Wi‑Fi:
+
+```text
+http://<ip-lan-mac>:8765
+```
+
+Verifica:
+
+```bash
+curl http://127.0.0.1:8765/api/health
+docker compose ps
+```
+
+I layout e le immagini campagna restano su HermesRack Desktop:
+
+```text
+/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER/Liveoakbbq/campaigns
+```
+
+Guida completa: `docs/SETUP-DOCKER-E-REMOTE.md`
+
+### Avvio locale (fallback)
+
+```bash
+cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
+python3 scripts/run_server.py
 ```
 
 ## Funzioni v0

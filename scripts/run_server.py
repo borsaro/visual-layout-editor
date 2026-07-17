@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import socket
 import struct
 import time
 
@@ -22,6 +23,22 @@ HOST = os.environ.get('ROBY_LAYOUT_EDITOR_HOST', '127.0.0.1')
 
 ALLOWED_ROOTS = [ROOT.resolve(), CAMPAIGNS_ROOT]
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp'}
+
+
+def local_lan_ip() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(('8.8.8.8', 80))
+            ip = sock.getsockname()[0]
+            if ip.startswith(('127.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.')):
+                return None
+            return ip
+    except Exception:
+        return None
+
+
+def in_docker() -> bool:
+    return Path('/.dockerenv').exists()
 
 
 def under(child: Path, parent: Path) -> bool:
@@ -253,6 +270,14 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         try:
+            if parsed.path == '/api/health':
+                self._json(200, {
+                    'ok': True,
+                    'app': 'roby-visual-layout-editor',
+                    'campaigns_root': str(CAMPAIGNS_ROOT),
+                    'editor_root': str(ROOT),
+                })
+                return
             if parsed.path == '/api/list-layouts':
                 q = parse_qs(parsed.query)
                 include_images = q.get('include_images', ['1'])[0] != '0'
@@ -368,5 +393,9 @@ print(f'Campaign layouts/assets: {CAMPAIGNS_ROOT}')
 print(f'Bind: {HOST}:{PORT}')
 print(f'Open local: http://127.0.0.1:{PORT}')
 if HOST in ('0.0.0.0', ''):
-    print(f'Open LAN: http://192.168.100.18:{PORT}')
+    lan_ip = os.environ.get('ROBY_LAYOUT_LAN_IP') or local_lan_ip()
+    if lan_ip:
+        print(f'Open LAN: http://{lan_ip}:{PORT}')
+    elif in_docker():
+        print(f'Open LAN: http://<mac-lan-ip>:{PORT} (IP del Mac host, vedi docs/SETUP-DOCKER-E-REMOTE.md)')
 ThreadingHTTPServer((HOST, PORT), RobyLayoutHandler).serve_forever()
