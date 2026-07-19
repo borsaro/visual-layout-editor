@@ -15,6 +15,8 @@ cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
 docker compose up -d --build
 ```
 
+L’immagine include Playwright/Chromium per l’export PNG server-side (`POST /api/export`). Dopo cambi a `Dockerfile` o `requirements.txt` rifai `--build`.
+
 Poi apri:
 
 ```text

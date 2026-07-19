@@ -14,7 +14,10 @@ const state = {
   currentLibraryFolder: localStorage.getItem('robyLayoutLibraryFolder') || '',
   dirty: false,
   loadedJsonFilename: null,
+  localFileHandle: null, // File System Access API handle (Carica JSON → Salva Json)
   showSafeGuides: localStorage.getItem('robyShowSafeGuides') === '1',
+  campaignsRoot: '',
+  editorRoot: '',
 };
 window.state = state;
 let drag = null;
@@ -26,6 +29,7 @@ const selected = () => state.layers.find(l => l.id === state.selectedId) || null
 const isSelected = (id) => state.selectedIds.includes(id);
 const selectedLayers = () => state.layers.filter(l => isSelected(l.id));
 const layerVisible = (l) => l && l.visible !== false;
+const layerLocked = (l) => !!(l && l.locked);
 
 function setLayerVisible(id, visible){
   const l = state.layers.find(x => x.id === id);
@@ -39,6 +43,14 @@ function toggleLayerVisible(id){
   const l = state.layers.find(x => x.id === id);
   if(!l) return;
   setLayerVisible(id, !layerVisible(l));
+}
+function toggleLayerLocked(id){
+  const l = state.layers.find(x => x.id === id);
+  if(!l) return;
+  pushHistory();
+  l.locked = !layerLocked(l);
+  markDirty();
+  render();
 }
 
 function markDirty(){ state.dirty = true; }
@@ -55,6 +67,29 @@ function showToast(msg){
 function currentLayoutExportName(){
   if(state.currentLayoutPath) return state.currentLayoutPath.split('/').pop();
   return state.loadedJsonFilename || 'layout.layout.json';
+}
+function currentFileLabel(){
+  if(state.currentLayoutPath) return state.currentLayoutPath.split('/').pop();
+  if(state.localFileHandle || state.loadedJsonFilename){
+    const name = state.loadedJsonFilename || state.localFileHandle?.name || 'layout.json';
+    return state.localFileHandle ? name + ' (locale)' : name + ' (locale, solo download)';
+  }
+  return 'nessun file aperto';
+}
+function clearLocalFileHandle(){ state.localFileHandle = null; }
+async function ensureLocalWritePermission(handle){
+  if(!handle) return false;
+  const opts = { mode: 'readwrite' };
+  if((await handle.queryPermission(opts)) === 'granted') return true;
+  if((await handle.requestPermission(opts)) === 'granted') return true;
+  return false;
+}
+async function writeJsonToLocalHandle(handle){
+  const ok = await ensureLocalWritePermission(handle);
+  if(!ok) throw new Error('Permesso di scrittura sul file negato dal browser');
+  const writable = await handle.createWritable();
+  await writable.write(JSON.stringify(layoutPayload(), null, 2));
+  await writable.close();
 }
 function snapshot(){ return JSON.stringify({canvas: state.canvas, layers: state.layers, selectedId: state.selectedId, selectedIds: state.selectedIds}); }
 function restoreSnapshot(snap){ const data=JSON.parse(snap); state.canvas=data.canvas; state.layers=data.layers; state.selectedId=data.selectedId || null; state.selectedIds=data.selectedIds || (state.selectedId?[state.selectedId]:[]); syncCanvasInputs(); render(); }
@@ -78,6 +113,7 @@ function defaultRect() {
 function defaultImage(src, name='Immagine') {
   return { id: uid(), type: 'image', name, x: 120, y: 320, w: 420, h: 420, z: nextZ(), opacity: 1, rotation: 0, src, fit: 'contain' };
 }
+// defaultGradient() lives in gradient.js
 function nextZ(){ return state.layers.length ? Math.max(...state.layers.map(l=>Number(l.z)||0))+1 : 1; }
 
 function render() {
@@ -87,7 +123,7 @@ function render() {
   canvas.style.background = state.canvas.background || '#fff';
   $('stage').style.transform = `scale(${state.zoom/100})`;
   const selCount = state.selectedIds.length ? ` · ${state.selectedIds.length} selezionati` : '';
-  const fileInfo = state.currentLayoutPath ? ` · ${state.currentLayoutPath.split('/').pop()}` : ' · nessun file aperto';
+  const fileInfo = ` · ${currentFileLabel()}`;
   const dirtyInfo = state.dirty ? ' · ● modificato' : '';
   const hiddenCount = state.layers.filter(l => !layerVisible(l)).length;
   const hiddenInfo = hiddenCount ? ` · ${hiddenCount} nascosti` : '';
@@ -101,7 +137,7 @@ function render() {
 
 function renderLayer(layer) {
   const el = document.createElement('div');
-  el.className = `layer ${layer.type}` + (isSelected(layer.id) ? ' selected' : '');
+  el.className = `layer ${layer.type}` + (isSelected(layer.id) ? ' selected' : '') + (layerLocked(layer) ? ' locked' : '');
   el.dataset.id = layer.id;
   el.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
   Object.assign(el.style, {
@@ -109,10 +145,20 @@ function renderLayer(layer) {
     zIndex: layer.z || 1, opacity: layer.opacity ?? 1,
     transform: `rotate(${Number(layer.rotation)||0}deg)`, transformOrigin: 'center center',
   });
+  applyBlendDom(el, layer);
   if (layer.type === 'text') {
+    // Outer keeps text-shadow/glow; inner clips glyph overflow so shadows are not boxed.
     const layout = measureTextLayout(layer);
     const padTop = textBlockDomPaddingTop(layer, layout);
     Object.assign(el.style, {
+      display: 'block',
+      boxSizing: 'border-box',
+      height: layer.h + 'px',
+      overflow: 'visible',
+    });
+    const inner = document.createElement('div');
+    inner.className = 'textClip';
+    Object.assign(inner.style, {
       fontFamily: layer.fontFamily || layer.font || 'Arial',
       fontSize: layer.fontSize + 'px',
       fontWeight: layer.fontWeight || '400',
@@ -121,32 +167,54 @@ function renderLayer(layer) {
       textAlign: layer.align || 'left',
       display: 'block',
       boxSizing: 'border-box',
-      height: layer.h + 'px',
+      width: '100%',
+      height: '100%',
       paddingTop: padTop + 'px',
       overflow: 'hidden',
     });
-    applyTextStyleDom(el, layer, layout.lines);
+    applyTextStyleDom(inner, layer, layout.lines);
+    applyLayerEffectsDom(el, layer);
+    el.appendChild(inner);
     el.addEventListener('dblclick', (ev)=>startInlineTextEdit(ev, layer.id));
   } else if (layer.type === 'rect') {
     Object.assign(el.style, { background: layer.fill || 'transparent', border: `${layer.strokeWidth||0}px solid ${layer.stroke||'transparent'}`, borderRadius: (layer.radius||0)+'px' });
+    applyLayerEffectsDom(el, layer);
   } else if (layer.type === 'image') {
     const clip = document.createElement('div'); clip.className='imageClip';
-    const img = document.createElement('img'); img.src = layer.src; img.alt = layer.name || '';
+    const img = document.createElement('img'); img.alt = layer.name || '';
     const crop = layer.crop ? normalizedCrop(layer) : null;
     if(crop){
       Object.assign(img.style, { position:'absolute', left:(-crop.x/crop.w*100)+'%', top:(-crop.y/crop.h*100)+'%', width:(100/crop.w)+'%', height:(100/crop.h)+'%', objectFit:'fill' });
     } else {
       img.style.objectFit = layer.fit || 'contain';
     }
+    // drop-shadow on <img> follows PNG alpha; on .layer/.imageClip it becomes a hard box
+    applyLayerEffectsDom(img, layer);
+    if(typeof keyBlackEnabled === 'function' && keyBlackEnabled(layer)){
+      const loader = new Image();
+      loader.onload = ()=>{ img.src = processImageForKey(loader, layer).toDataURL('image/png'); };
+      loader.onerror = ()=>{ img.src = resolveAssetUrl(layer.src); };
+      loader.src = resolveAssetUrl(layer.src);
+    } else {
+      img.src = resolveAssetUrl(layer.src);
+    }
     clip.appendChild(img); el.appendChild(clip);
+  } else if (layer.type === 'gradient') {
+    Object.assign(el.style, {
+      background: gradientCssBackground(layer),
+      borderRadius: (layer.radius || 0) + 'px',
+    });
+    applyLayerEffectsDom(el, layer);
   }
-  ['nw','ne','sw','se'].forEach(pos=>{
-    const handle = document.createElement('div');
-    handle.className = `resizeHandle handle-${pos}`;
-    handle.dataset.handle = pos;
-    handle.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
-    el.appendChild(handle);
-  });
+  if(!layerLocked(layer)){
+    ['nw','ne','sw','se'].forEach(pos=>{
+      const handle = document.createElement('div');
+      handle.className = `resizeHandle handle-${pos}`;
+      handle.dataset.handle = pos;
+      handle.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
+      el.appendChild(handle);
+    });
+  }
   el.addEventListener('mousedown', (ev) => startDrag(ev, layer.id, ev.target?.dataset?.handle || null));
   el.addEventListener('click', (ev) => { ev.stopPropagation(); if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(layer.id); else selectOnly(layer.id); render(); });
   return el;
@@ -155,26 +223,35 @@ function renderLayerList(){
   const box=$('layersList'); box.innerHTML='';
   [...state.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(l=>{
     const row=document.createElement('div');
-    row.className='layerItem'+(isSelected(l.id)?' active':'')+(!layerVisible(l)?' hiddenLayer':'');
+    row.className='layerItem'+(isSelected(l.id)?' active':'')+(!layerVisible(l)?' hiddenLayer':'')+(layerLocked(l)?' lockedLayer':'');
     const eye=document.createElement('button');
     eye.type='button';
     eye.className='layerEye'+(layerVisible(l)?'':' off');
     eye.title=layerVisible(l)?'Nascondi layer':'Mostra layer';
     eye.textContent=layerVisible(l)?'◉':'○';
     eye.onclick=(ev)=>{ ev.stopPropagation(); toggleLayerVisible(l.id); };
+    const lock=document.createElement('button');
+    lock.type='button';
+    lock.className='layerLock'+(layerLocked(l)?' on':'');
+    lock.title=layerLocked(l)?'Sblocca layer':'Blocca layer';
+    lock.textContent=layerLocked(l)?'🔒':'🔓';
+    lock.onclick=(ev)=>{ ev.stopPropagation(); toggleLayerLocked(l.id); };
     const info=document.createElement('div');
     info.className='layerItemMain';
     info.innerHTML=`<span>${escapeHtml(l.name||l.type)}</span><small>${l.type} · z${l.z||0}</small>`;
     info.onclick=(ev)=>{ if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(l.id); else selectOnly(l.id); render(); };
-    row.append(eye, info);
+    row.append(eye, lock, info);
     box.appendChild(row);
   });
 }
 function renderProps(){
   const l=selected(); $('emptyProps').hidden=!!l; $('props').hidden=!l; if(!l) return;
   setVal('propName',l.name); setVal('propX',Math.round(l.x)); setVal('propY',Math.round(l.y)); setVal('propW',Math.round(l.w)); setVal('propH',Math.round(l.h)); setVal('propZ',l.z||1); setVal('propOpacity',l.opacity ?? 1); setVal('propRotation',l.rotation || 0);
+  populateBlendSelect($('propBlendMode'), l.blendMode);
   const vis=$('propVisible'); if(vis) vis.checked = layerVisible(l);
+  const lockEl=$('propLocked'); if(lockEl) lockEl.checked = layerLocked(l);
   $('textProps').hidden=l.type!=='text'; $('boxProps').hidden=!(l.type==='rect'); $('imageProps').hidden=l.type!=='image';
+  const gradProps=$('gradientProps'); if(gradProps) gradProps.hidden=l.type!=='gradient';
   if(l.type==='text'){
     const ff=l.fontFamily||l.font||'Arial';
     populateFontSelect(ff);
@@ -183,13 +260,32 @@ function renderProps(){
     syncTextStyleToggles(l);
   }
   if(l.type==='rect'){ setVal('propFill',rgbToHex(l.fill||'#eb0029')); setVal('propStroke',rgbToHex(l.stroke||'#eb0029')); setVal('propStrokeWidth',l.strokeWidth||0); setVal('propRadius',l.radius||0); }
-  if(l.type==='image'){ setVal('propFit',l.fit||'contain'); }
+  if(l.type==='image'){
+    setVal('propFit',l.fit||'contain');
+    setVal('propImageSrc', isEmbeddedSrc(l.src) ? '(base64 incorporato)' : (l.src || ''));
+    const srcHint=$('imageSrcHint');
+    if(srcHint) srcHint.textContent = isEmbeddedSrc(l.src)
+      ? 'Sorgente pesante (data URI). Preferisci un path tipo _assets/…'
+      : 'Path relativo alla root campagne (es. _assets/fuoco/file.png).';
+    syncKeyBlackProps(l);
+  }
+  if(l.type==='gradient') syncGradientProps(l);
+  const fxBox = $('effectProps');
+  if(fxBox) fxBox.hidden = !(l.type==='text' || l.type==='image' || l.type==='rect' || l.type==='gradient');
+  const glowBox = $('glowProps');
+  if(glowBox) glowBox.hidden = l.type!=='text';
+  syncEffectInputs('propShadow', l.shadow, defaultShadow());
+  if(l.type==='text') syncEffectInputs('propGlow', l.glow, defaultGlow());
 }
 function setVal(id,v){ const el=$(id); if(el) el.value = v ?? ''; }
 function beginPropHistory(){ if(!propHistoryPending){ pushHistory(); propHistoryPending = true; } }
 function commitPropHistory(){ propHistoryPending = false; if(propHistoryTimer){ clearTimeout(propHistoryTimer); propHistoryTimer = null; } }
 function updateProp(key, value, opts={}){
   const l=selected(); if(!l) return;
+  if(layerLocked(l) && key !== 'locked' && key !== 'visible' && key !== 'name'){
+    showToast('Layer bloccato — sblocca per modificare');
+    return;
+  }
   if(opts.history !== false){
     if(opts.debounce){
       beginPropHistory();
@@ -249,6 +345,14 @@ function groupBox(layers){
 }
 function startDrag(ev, id, handle=null){
   ev.preventDefault(); ev.stopPropagation();
+  const target = state.layers.find(l => l.id === id);
+  if(layerLocked(target)){
+    if(!isSelected(id)){
+      if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(id); else selectOnly(id);
+      render();
+    }
+    return;
+  }
   const resizing = !!handle;
   const cropMode = resizing && (ev.ctrlKey || ev.metaKey);
   const freeResizeMode = resizing && ev.shiftKey;
@@ -260,7 +364,8 @@ function startDrag(ev, id, handle=null){
   } else if(!isSelected(id)){
     if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(id); else selectOnly(id);
   }
-  const layers=selectedLayers();
+  const layers=selectedLayers().filter(l => !layerLocked(l));
+  if(!layers.length){ render(); return; }
   pushHistory();
   drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type})), box: groupBox(layers) };
   document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', endDrag); render();
@@ -367,9 +472,39 @@ function bindProps(){
   });
   $('propName').oninput=()=>updateProp('name',$('propName').value);
   $('propVisible')?.addEventListener('change', ()=>updateProp('visible', $('propVisible').checked));
+  $('propLocked')?.addEventListener('change', ()=>updateProp('locked', $('propLocked').checked));
+  $('propBlendMode')?.addEventListener('change', ()=>updateProp('blendMode', normalizeBlendMode($('propBlendMode').value)));
+  const applyKeyBlack = ()=>updateProp('keyBlack', readKeyBlackFromUi(), {debounce:true});
+  ['propKeyBlackEnabled','propKeyThreshold','propKeySoftness'].forEach((id)=>{
+    $(id)?.addEventListener('change', applyKeyBlack);
+    $(id)?.addEventListener('input', applyKeyBlack);
+  });
   $('propText').oninput=()=>updateProp('text',$('propText').value);
   $('propFontWeight').onchange=()=>updateProp('fontWeight',$('propFontWeight').value);
-  $('propFontFamily').onchange=()=>updateProp('fontFamily',$('propFontFamily').value);
+  $('propFontFamily').onchange=()=>{
+    updateProp('fontFamily',$('propFontFamily').value);
+    updateFontAvailabilityHint($('propFontFamily').value);
+  };
+  $('loadCustomFontBtn')?.addEventListener('click', async ()=>{
+    try{
+      const name = await loadCustomFont($('customFontName')?.value, $('customFontUrl')?.value);
+      populateFontSelect(name);
+      updateProp('fontFamily', name);
+      showToast('Font caricato: ' + name);
+    }catch(e){ alert('Font: ' + e.message); }
+  });
+  $('customFontFile')?.addEventListener('change', async (ev)=>{
+    const file = ev.target.files?.[0]; ev.target.value='';
+    if(!file) return;
+    const name = ($('customFontName')?.value || file.name.replace(/\.[^.]+$/, '')).trim();
+    const url = URL.createObjectURL(file);
+    try{
+      await loadCustomFont(name, url);
+      populateFontSelect(name);
+      updateProp('fontFamily', name);
+      showToast('Font locale: ' + name);
+    }catch(e){ alert('Font: ' + e.message); }
+  });
   $('propTextTransform').onchange=()=>updateProp('textTransform',$('propTextTransform').value);
   $('propColor').oninput=()=>updateProp('color',$('propColor').value);
   $('propAlign').onchange=()=>updateProp('align',$('propAlign').value);
@@ -377,6 +512,27 @@ function bindProps(){
   $('propFill').oninput=()=>updateProp('fill',$('propFill').value);
   $('propStroke').oninput=()=>updateProp('stroke',$('propStroke').value);
   $('propFit').onchange=()=>updateProp('fit',$('propFit').value);
+  $('propGradientType')?.addEventListener('change', ()=>updateProp('gradientType', $('propGradientType').value));
+  $('propGradientAngle')?.addEventListener('input', ()=>updateProp('angle', Number($('propGradientAngle').value), {history:false, debounce:true}));
+  ['propGradStopAColor','propGradStopAAlpha','propGradStopBColor','propGradStopBAlpha'].forEach((id)=>{
+    $(id)?.addEventListener('input', ()=>updateProp('stops', readGradientStopsFromUi(), {history:false, debounce:true}));
+  });
+  $('propImageSrcApply')?.addEventListener('click', ()=>{
+    const raw = ($('propImageSrc')?.value || '').trim();
+    if(!raw || raw.startsWith('(base64')){ alert('Inserisci un path asset, es. _assets/fuoco/file.png'); return; }
+    updateProp('src', campaignsRelativeSrc(raw));
+  });
+  const bindEffect = (prefix, key, withOffset) => {
+    const apply = () => updateProp(key, readEffectFromUi(prefix, withOffset), {debounce:true});
+    ['Enabled','Color','Blur','Opacity','OffsetX','OffsetY'].forEach((suffix)=>{
+      const el = $(prefix + suffix);
+      if(!el) return;
+      el.addEventListener('change', apply);
+      el.addEventListener('input', apply);
+    });
+  };
+  bindEffect('propShadow', 'shadow', true);
+  bindEffect('propGlow', 'glow', false);
   document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
     btn.onclick=()=>{
       const l=selected(); if(!l || l.type!=='text') return;
@@ -393,18 +549,67 @@ function bindProps(){
 function layoutPayload(){
   return { version:1, app:'roby-visual-layout-editor', canvas:state.canvas, layers:state.layers };
 }
+async function saveJsonOverwrite(){
+  // 1) Layout da libreria / API (path server)
+  if(state.currentLayoutPath){
+    const res = await fetch('/api/save-layout', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: state.currentLayoutPath, layout: layoutPayload()}),
+    });
+    const data = await res.json();
+    if(!data.ok){ alert('Errore salvataggio JSON: ' + data.error); return; }
+    state.currentLayoutPath = data.path;
+    clearLocalFileHandle();
+    clearDirty();
+    render();
+    showToast('JSON sovrascritto: ' + data.path);
+    return;
+  }
+  // 2) File aperto con Carica JSON (File System Access handle)
+  if(state.localFileHandle){
+    try{
+      await writeJsonToLocalHandle(state.localFileHandle);
+      clearDirty();
+      render();
+      showToast('JSON sovrascritto: ' + (state.loadedJsonFilename || state.localFileHandle.name));
+    }catch(e){
+      alert('Salvataggio file locale fallito: ' + e.message);
+    }
+    return;
+  }
+  // 3) Caricato senza handle → chiedi dove salvare (stesso file se l’utente lo riseleziona)
+  if(typeof window.showSaveFilePicker === 'function'){
+    try{
+      const handle = await window.showSaveFilePicker({
+        suggestedName: state.loadedJsonFilename || 'layout.layout.json',
+        types: [{ description: 'Layout JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      state.localFileHandle = handle;
+      state.loadedJsonFilename = handle.name;
+      await writeJsonToLocalHandle(handle);
+      clearDirty();
+      render();
+      showToast('JSON salvato: ' + handle.name);
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError') return;
+      // fall through to download
+    }
+  }
+  if(state.loadedJsonFilename){
+    downloadLayoutJson(state.loadedJsonFilename);
+    showToast('Browser senza riscrittura file: JSON scaricato come ' + state.loadedJsonFilename);
+    return;
+  }
+  alert('Nessun file JSON aperto.\nUsa “Carica JSON”, la libreria, oppure “Scarica JSON”.');
+}
 async function saveLayout(){
   if(!state.currentLayoutPath){
     downloadLayoutJson(currentLayoutExportName());
     return;
   }
-  const res = await fetch('/api/save-layout', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: state.currentLayoutPath, layout: layoutPayload()})});
-  const data = await res.json();
-  if(!data.ok){ alert('Errore salvataggio: '+data.error); return; }
-  state.currentLayoutPath = data.path;
-  clearDirty();
-  render();
-  showToast('Layout salvato: ' + data.path);
+  return saveJsonOverwrite();
 }
 async function saveLayoutAs(){
   if(!state.currentLayoutPath){
@@ -432,20 +637,54 @@ function downloadLayoutJson(filename){
   clearDirty();
   showToast('JSON scaricato: ' + name);
 }
-function loadJsonFile(file){
+function loadJsonFile(file, handle=null){
   if(!confirmDiscardChanges()) return;
   const r=new FileReader();
-  r.onload=()=>{ state.loadedJsonFilename = file.name; loadLayoutObject(JSON.parse(r.result), null); };
+  r.onload=()=>{
+    clearLocalFileHandle();
+    if(handle) state.localFileHandle = handle;
+    loadLayoutObject(JSON.parse(r.result), null, file.name);
+    showToast(handle
+      ? ('JSON locale: ' + file.name + ' — Salva Json riscrive questo file')
+      : ('JSON locale: ' + file.name + ' — Salva Json chiederà dove salvare'));
+  };
   r.readAsText(file);
 }
-function loadLayoutObject(data, path=null){
+async function openLocalJson(){
+  if(typeof window.showOpenFilePicker === 'function'){
+    try{
+      if(!confirmDiscardChanges()) return;
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: 'Layout JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      const file = await handle.getFile();
+      clearLocalFileHandle();
+      state.localFileHandle = handle;
+      const text = await file.text();
+      loadLayoutObject(JSON.parse(text), null, file.name);
+      showToast('JSON locale: ' + file.name + ' — Salva Json riscrive questo file');
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError') return;
+      // fallback input
+    }
+  }
+  $('jsonInput')?.click();
+}
+function loadLayoutObject(data, path=null, localName=null){
   pushHistory();
   state.canvas=data.canvas||state.canvas;
   state.layers=data.layers||[];
   state.selectedId=null;
   state.selectedIds=[];
   state.currentLayoutPath=path;
-  if(path) state.loadedJsonFilename = path.split('/').pop();
+  if(path){
+    clearLocalFileHandle();
+    state.loadedJsonFilename = path.split('/').pop();
+  } else if(localName){
+    state.loadedJsonFilename = localName;
+  }
   clearDirty();
   syncCanvasInputs();
   render();
@@ -507,11 +746,13 @@ async function refreshLayoutLibrary(){
   localStorage.setItem('robyLayoutLibraryFolder', state.currentLibraryFolder);
   const availablePaths = new Set(state.libraryItems.filter(x=>x.kind==='layout').map(x=>x.path));
   state.selectedLibraryPaths = state.selectedLibraryPaths.filter(path=>availablePaths.has(path));
+  if(payload.campaigns_root) state.campaignsRoot = payload.campaigns_root;
   if(meta){
     const layouts=(payload.items||[]).filter(x=>x.kind==='layout').length;
     const images=(payload.items||[]).filter(x=>x.kind==='image').length;
     const folderLabel=state.currentLibraryFolder ? `/${state.currentLibraryFolder}` : '/';
-    meta.textContent=`${payload.folder_count||0} cartelle · ${payload.count} elementi in ${folderLabel} · ${layouts} layout · ${images} immagini`;
+    const root = payload.campaigns_root || state.campaignsRoot || '';
+    meta.textContent=`root: ${root} · ${payload.folder_count||0} cartelle · ${payload.count} elementi in ${folderLabel} · ${layouts} layout · ${images} immagini`;
   }
   renderLibraryBreadcrumb();
   renderLibraryGrid();
@@ -691,11 +932,13 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
   for(const l of [...(layout.layers||[])].sort((a,b)=>(a.z||0)-(b.z||0))){
     if(l.visible === false) continue;
     ctx.save(); ctx.globalAlpha=l.opacity ?? 1;
+    applyBlendCanvas(ctx, l);
     const rot=(Number(l.rotation)||0)*Math.PI/180;
     if(rot){ ctx.translate(l.x+l.w/2,l.y+l.h/2); ctx.rotate(rot); ctx.translate(-(l.x+l.w/2),-(l.y+l.h/2)); }
-    if(l.type==='rect') drawRoundRect(ctx,l.x,l.y,l.w,l.h,l.radius||0,l.fill,l.stroke,l.strokeWidth||0);
+    if(l.type==='rect') drawRoundRect(ctx,l.x,l.y,l.w,l.h,l.radius||0,l.fill,l.stroke,l.strokeWidth||0,l);
     if(l.type==='text') drawCanvasText(ctx,l);
     if(l.type==='image') await drawCanvasImage(ctx,l);
+    if(l.type==='gradient') drawCanvasGradient(ctx,l);
     ctx.restore();
   }
 }
@@ -760,13 +1003,47 @@ async function exportPng(){
     showToast('PNG esportato: ' + name);
   }, 'image/png');
 }
-function drawRoundRect(ctx,x,y,w,h,r,fill,stroke,sw){
+function drawRoundRect(ctx,x,y,w,h,r,fill,stroke,sw,layer){
+  if(layer) applyCanvasShadow(ctx, layer.shadow);
   r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
   if(fill){ctx.fillStyle=fill; ctx.fill();} if(sw>0){ctx.lineWidth=sw; ctx.strokeStyle=stroke||'#000'; ctx.stroke();}
+  if(layer) clearCanvasShadow(ctx);
 }
 function drawCanvasImage(ctx,l){
-  return new Promise((resolve)=>{ const img=new Image(); img.onload=()=>{ drawImageFit(ctx,img,l); resolve(); }; img.onerror=resolve; img.src=l.src; });
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const srcImg = (typeof processImageForKey === 'function') ? processImageForKey(img, l) : img;
+      // Bake fit/crop into an alpha canvas first, then draw with shadow (avoids clip boxing the blur).
+      const off = document.createElement('canvas');
+      off.width = Math.max(1, Math.round(l.w));
+      off.height = Math.max(1, Math.round(l.h));
+      const octx = off.getContext('2d');
+      drawImageFit(octx, srcImg, { ...l, x: 0, y: 0, w: off.width, h: off.height });
+      applyCanvasShadow(ctx, l.shadow);
+      ctx.drawImage(off, l.x, l.y, l.w, l.h);
+      clearCanvasShadow(ctx);
+      resolve();
+    };
+    img.onerror=resolve;
+    img.src=resolveAssetUrl(l.src);
+  });
 }
+
+async function exportLayoutToPngBase64(layout){
+  ensureCatalogGoogleFonts?.();
+  const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
+  await Promise.all([...families].map((f)=>waitForFont?.(f, 4000)));
+  try { await document.fonts.ready; } catch(_){}
+  const w = layout.canvas?.width || 1080;
+  const h = layout.canvas?.height || 1350;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  await renderLayoutToCanvas(out.getContext('2d'), layout, w, h);
+  const dataUrl = out.toDataURL('image/png');
+  return dataUrl.split(',')[1] || '';
+}
+window.exportLayoutToPngBase64 = exportLayoutToPngBase64;
 function drawImageFit(ctx,img,l){
   if(l.crop){
     const c=normalizedCrop(l);
@@ -808,7 +1085,7 @@ function rgbToHex(v){
 
 
 function alignSelectedToCanvas(action){
-  const layers=selectedLayers();
+  const layers=selectedLayers().filter(l=>!layerLocked(l));
   if(!layers.length) return;
   pushHistory();
   const cw=state.canvas.width, ch=state.canvas.height;
@@ -825,7 +1102,7 @@ function alignSelectedToCanvas(action){
 }
 
 function alignSelectedLayers(action){
-  const layers=selectedLayers();
+  const layers=selectedLayers().filter(l=>!layerLocked(l));
   if(!layers.length) return;
   pushHistory();
   const box=groupBox(layers);
@@ -869,7 +1146,7 @@ function bindKeyboardShortcuts(){
     const key = ev.key.toLowerCase();
     if(mod && key === 's'){
       ev.preventDefault();
-      saveLayout();
+      saveJsonOverwrite();
       return;
     }
     if(mod && key === 'z'){
@@ -898,7 +1175,7 @@ function bindKeyboardShortcuts(){
       ev.preventDefault();
       const step = ev.shiftKey ? 10 : 1;
       pushHistory();
-      selectedLayers().forEach(l=>{
+      selectedLayers().filter(l=>!layerLocked(l)).forEach(l=>{
         if(ev.key === 'ArrowLeft') l.x -= step;
         if(ev.key === 'ArrowRight') l.x += step;
         if(ev.key === 'ArrowUp') l.y -= step;
@@ -915,6 +1192,35 @@ function bindKeyboardShortcuts(){
   });
 }
 
+async function loadServerHealth(){
+  try{
+    const res = await fetch('/api/health', {cache:'no-store'});
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'health failed');
+    state.campaignsRoot = data.campaigns_root || '';
+    state.editorRoot = data.editor_root || '';
+  }catch(e){
+    state.campaignsRoot = '';
+    state.editorRoot = '';
+  }
+  const label = $('campaignsRootLabel');
+  if(label){
+    label.textContent = state.campaignsRoot ? `campaigns: ${state.campaignsRoot}` : 'campaigns: (server non raggiungibile)';
+    label.title = state.campaignsRoot || 'Avvia scripts/run_server.py per la root campagne';
+  }
+}
+
+function addImageByPath(){
+  const raw = prompt('Path immagine relativo alla root campagne:\n(es. _assets/fuoco/fuoco-keyed-intero.png)', '_assets/');
+  if(!raw) return;
+  const src = campaignsRelativeSrc(raw.trim());
+  pushHistory();
+  state.layers.push(defaultImage(src, src.split('/').pop()));
+  selectOnly(state.layers.at(-1).id);
+  markDirty();
+  render();
+}
+
 function init(){
   $('canvas').addEventListener('mousedown', startMarquee);
   $('canvas').addEventListener('contextmenu', (ev)=>{ if(ev.target.closest?.('.layer')) ev.preventDefault(); });
@@ -922,9 +1228,15 @@ function init(){
   $('zoomRange').oninput=()=>{state.zoom=Number($('zoomRange').value); render();};
   $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
+  $('addGradientBtn')?.addEventListener('click', ()=>{ pushHistory(); state.layers.push(defaultGradient()); selectOnly(state.layers.at(-1).id); markDirty(); render(); });
+  $('addImagePathBtn')?.addEventListener('click', addImageByPath);
   $('imageInput').onchange=e=>{ if(e.target.files[0]) readImageFile(e.target.files[0]); e.target.value=''; };
+  $('openJsonBtn')?.addEventListener('click', ()=>openLocalJson());
   $('jsonInput').onchange=e=>{ if(e.target.files[0]) loadJsonFile(e.target.files[0]); e.target.value=''; };
-  $('saveLayoutBtn').onclick=saveLayout; $('saveAsLayoutBtn').onclick=saveLayoutAs; $('exportPngBtn').onclick=exportPng;
+  $('saveJsonBtn').onclick=saveJsonOverwrite;
+  $('saveLayoutBtn').onclick=saveLayout;
+  $('saveAsLayoutBtn').onclick=saveLayoutAs;
+  $('exportPngBtn').onclick=exportPng;
   $('openLibraryBtn').onclick=openLayoutLibrary;
   $('closeLibraryBtn').onclick=closeLayoutLibrary;
   $('refreshLibraryBtn').onclick=()=>refreshLayoutLibrary().catch(e=>alert('Errore aggiornamento libreria: '+e.message));
@@ -934,14 +1246,24 @@ function init(){
   $('libraryKindFilter').onchange=renderLibraryGrid;
   document.querySelectorAll('[data-align-action]').forEach(btn=>btn.onclick=()=>alignSelectedLayers(btn.dataset.alignAction));
   document.querySelectorAll('[data-canvas-align]').forEach(btn=>btn.onclick=()=>alignSelectedToCanvas(btn.dataset.canvasAlign));
-  $('deleteBtn').onclick=()=>{ if(!state.selectedIds.length) return; pushHistory(); state.layers=state.layers.filter(x=>!isSelected(x.id)); state.selectedId=null; state.selectedIds=[]; markDirty(); render(); };
+  $('deleteBtn').onclick=()=>{
+    if(!state.selectedIds.length) return;
+    const locked = selectedLayers().filter(layerLocked);
+    if(locked.length){ showToast('Sblocca i layer prima di eliminarli'); return; }
+    pushHistory(); state.layers=state.layers.filter(x=>!isSelected(x.id)); state.selectedId=null; state.selectedIds=[]; markDirty(); render();
+  };
   $('duplicateBtn').onclick=()=>{ const ls=selectedLayers(); if(!ls.length) return; pushHistory(); const copies=ls.map(l=>{ const c=JSON.parse(JSON.stringify(l)); c.id=uid(); c.name=(c.name||c.type)+' copy'; c.x+=24; c.y+=24; c.z=nextZ(); return c; }); state.layers.push(...copies); state.selectedIds=copies.map(c=>c.id); state.selectedId=state.selectedIds.at(-1); markDirty(); render(); };
   $('presetSelect').onchange=()=>{ const v=$('presetSelect').value; if(v!=='custom'){ const [w,h]=v.split('x').map(Number); $('canvasW').value=w; $('canvasH').value=h; }};
   $('resizeCanvasBtn').onclick=()=>{ pushHistory(); state.canvas.width=Number($('canvasW').value); state.canvas.height=Number($('canvasH').value); markDirty(); render(); };
   $('canvasBg')?.addEventListener('input', ()=>{ pushHistory(); state.canvas.background = $('canvasBg').value; markDirty(); render(); });
   $('toggleSafeGuides')?.addEventListener('change', (ev)=>{ state.showSafeGuides = ev.target.checked; localStorage.setItem('robyShowSafeGuides', state.showSafeGuides ? '1' : '0'); render(); });
   $('reloadBtn').onclick=()=>reloadCurrentLayout();
-  $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearDirty(); render(); }};
-  bindProps(); bindKeyboardShortcuts(); syncCanvasInputs(); populateFontSelect(); loadReadyLayouts(); render();
+  $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearLocalFileHandle(); clearDirty(); render(); }};
+  bindProps(); bindKeyboardShortcuts(); syncCanvasInputs(); populateFontSelect();
+  loadServerHealth().finally(()=>{ loadReadyLayouts(); render(); });
 }
-init();
+if(!window.ROBY_EXPORT_MODE) init();
+else {
+  window.__robyExportReady = true;
+  document.getElementById('exportStatus') && (document.getElementById('exportStatus').textContent = 'ready');
+}

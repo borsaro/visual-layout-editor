@@ -1,0 +1,2 @@
+# Alias: stesse dipendenze di requirements.txt (export server-side via Playwright)
+-r requirements.txt

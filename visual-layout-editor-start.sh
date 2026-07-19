@@ -29,7 +29,8 @@ kill_local_server() {
 kill_local_server
 
 echo "Avvio Docker visual-layout-editor su porta $PORT"
-docker compose up -d
+# --build se l'immagine manca o Dockerfile/requirements sono cambiati
+docker compose up -d --build
 
 if curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
   echo "OK → http://127.0.0.1:${PORT}"

@@ -4,22 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260717-textwrap" />
+  <link rel="stylesheet" href="./styles.css?v=20260719-shadowfix" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <strong>Roby Visual Layout Editor</strong>
       <span>static feed/story editor · JSON → PNG</span>
+      <span id="campaignsRootLabel" class="rootLabel" title="Root campagne caricata dal server">campaigns: …</span>
     </div>
     <div class="actions">
       <button id="reloadBtn" class="iconBtn" title="Ricarica layout da disco (ultima versione salvata)" aria-label="Aggiorna">↻</button>
       <button id="newBtn">Nuovo</button>
       <button id="openLibraryBtn">Libreria layout</button>
-      <label class="button">Carica JSON<input id="jsonInput" type="file" accept="application/json,.json" hidden></label>
-      <button id="saveLayoutBtn">Salva layout</button>
+      <button type="button" id="openJsonBtn" class="button" title="Apri un .json locale (Salva Json potrà riscriverlo)">Carica JSON</button>
+      <input id="jsonInput" type="file" accept="application/json,.json" hidden>
+      <button id="saveJsonBtn" class="primary" title="Sovrascrive il .layout.json aperto con le modifiche correnti">Salva Json</button>
+      <button id="saveLayoutBtn">Scarica JSON</button>
       <button id="saveAsLayoutBtn">Salva con nome</button>
-      <button id="exportPngBtn" class="primary">Export PNG</button>
+      <button id="exportPngBtn">Export PNG</button>
     </div>
   </header>
 
@@ -46,7 +49,9 @@
       <h2>Aggiungi</h2>
       <button id="addTextBtn">+ Testo</button>
       <button id="addRectBtn">+ Box</button>
-      <label class="button wide">+ Immagine<input id="imageInput" type="file" accept="image/*" hidden></label>
+      <button id="addGradientBtn">+ Gradiente</button>
+      <label class="button wide">+ Immagine (file→base64)<input id="imageInput" type="file" accept="image/*" hidden></label>
+      <button id="addImagePathBtn" class="wide">+ Immagine (path)</button>
 
       <h2>Layer</h2>
       <div id="layersList" class="layers"></div>
@@ -70,6 +75,7 @@
       <div id="props" hidden>
         <label>Nome <input id="propName"></label>
         <label class="toggleRow"><input id="propVisible" type="checkbox" checked> Layer visibile</label>
+        <label class="toggleRow"><input id="propLocked" type="checkbox"> Layer bloccato</label>
         <div class="grid2">
           <label>X <input id="propX" type="number"></label>
           <label>Y <input id="propY" type="number"></label>
@@ -81,6 +87,31 @@
           <label>Opacità <input id="propOpacity" type="number" min="0" max="1" step="0.05"></label>
         </div>
         <label>Rotazione ° <input id="propRotation" type="number" step="1" value="0"></label>
+        <label>Fusione
+          <select id="propBlendMode"></select>
+        </label>
+        <div id="effectProps">
+          <h3 class="propSubhead">Ombra</h3>
+          <label class="toggleRow"><input id="propShadowEnabled" type="checkbox"> Ombra attiva</label>
+          <div class="grid2">
+            <label>Colore <input id="propShadowColor" type="color" value="#000000"></label>
+            <label>Opacità <input id="propShadowOpacity" type="number" min="0" max="1" step="0.05" value="0.55"></label>
+          </div>
+          <div class="grid2">
+            <label>Raggio <input id="propShadowBlur" type="number" min="0" step="1" value="12"></label>
+            <label>Offset X <input id="propShadowOffsetX" type="number" step="1" value="0"></label>
+          </div>
+          <label>Offset Y <input id="propShadowOffsetY" type="number" step="1" value="4"></label>
+          <div id="glowProps">
+            <h3 class="propSubhead">Glow testo</h3>
+            <label class="toggleRow"><input id="propGlowEnabled" type="checkbox"> Glow attivo</label>
+            <div class="grid2">
+              <label>Colore <input id="propGlowColor" type="color" value="#ffffff"></label>
+              <label>Opacità <input id="propGlowOpacity" type="number" min="0" max="1" step="0.05" value="0.75"></label>
+            </div>
+            <label>Raggio <input id="propGlowBlur" type="number" min="0" step="1" value="18"></label>
+          </div>
+        </div>
         <div id="textProps">
           <label>Testo <textarea id="propText" rows="4"></textarea></label>
           <div class="grid2">
@@ -102,6 +133,13 @@
           <label>Font
             <select id="propFontFamily"></select>
           </label>
+          <p id="fontAvailabilityHint" class="muted hint"></p>
+          <div class="grid2">
+            <label>Font custom (nome) <input id="customFontName" placeholder="Oswald"></label>
+            <label>URL / file <input id="customFontUrl" placeholder="https://…/.woff2"></label>
+          </div>
+          <button type="button" id="loadCustomFontBtn" class="wide">Carica font custom</button>
+          <label class="button wide">Oppure file locale (.woff/.ttf)<input id="customFontFile" type="file" accept=".woff,.woff2,.ttf,.otf" hidden></label>
           <div class="styleToggles" id="textStyleToggles">
             <button type="button" data-style-toggle="italic" title="Corsivo" class="styleToggle italic">I</button>
             <button type="button" data-style-toggle="underline" title="Sottolineato" class="styleToggle underline">U</button>
@@ -119,7 +157,7 @@
             </label>
             <label>Letter spacing <input id="propLetterSpacing" type="number" step="0.5" value="0"></label>
           </div>
-          <p class="muted hint">I font usano i typeface installati su Hermes (DIN, Arial, ecc.). Se manca un font, il browser usa un sostituto. Valori dal JSON compaiono come “(dal layout)”.</p>
+          <p class="muted hint">Catalogo + Google Fonts (Oswald, Montserrat, …). Valori dal JSON compaiono come “(dal layout)”.</p>
           <div class="grid2">
             <label>Colore <input id="propColor" type="color"></label>
             <label>Allinea H <select id="propAlign"><option>left</option><option>center</option><option>right</option></select></label>
@@ -139,8 +177,36 @@
             <label>Radius <input id="propRadius" type="number"></label>
           </div>
         </div>
+        <div id="gradientProps" hidden>
+          <label>Tipo
+            <select id="propGradientType">
+              <option value="linear">Lineare</option>
+              <option value="radial">Radiale</option>
+            </select>
+          </label>
+          <label>Angolo ° <input id="propGradientAngle" type="number" step="1" value="180"></label>
+          <div class="grid2">
+            <label>Stop A <input id="propGradStopAColor" type="color" value="#000000"></label>
+            <label>Alpha A <input id="propGradStopAAlpha" type="number" min="0" max="1" step="0.05" value="0"></label>
+          </div>
+          <div class="grid2">
+            <label>Stop B <input id="propGradStopBColor" type="color" value="#000000"></label>
+            <label>Alpha B <input id="propGradStopBAlpha" type="number" min="0" max="1" step="0.05" value="0.72"></label>
+          </div>
+        </div>
         <div id="imageProps">
           <label>Fit <select id="propFit"><option>contain</option><option>cover</option><option>stretch</option></select></label>
+          <label>Sorgente (path)
+            <input id="propImageSrc" placeholder="_assets/fuoco/file.png">
+          </label>
+          <button type="button" id="propImageSrcApply" class="wide">Applica path</button>
+          <p id="imageSrcHint" class="muted hint">Path relativo alla root campagne (es. _assets/fuoco/file.png).</p>
+          <h3 class="propSubhead">Key nero</h3>
+          <label class="toggleRow"><input id="propKeyBlackEnabled" type="checkbox"> Rimuovi nero (luminanza→alpha)</label>
+          <div class="grid2">
+            <label>Soglia <input id="propKeyThreshold" type="number" min="0" max="255" step="1" value="16"></label>
+            <label>Morbidezza <input id="propKeySoftness" type="number" min="0" max="255" step="1" value="40"></label>
+          </div>
           <p class="muted hint">Maniglie: Shift = resize libero · Ctrl/Cmd = crop immagine</p>
         </div>
         <h2>Allinea al canvas</h2>
@@ -199,9 +265,14 @@
     </div>
   </div>
 
-  <script src="./fonts.js?v=20260717-textwrap"></script>
+  <script src="./fonts.js?v=20260719-fonts"></script>
+  <script src="./blend.js?v=20260719-blend"></script>
+  <script src="./effects.js?v=20260719-shadowfix"></script>
+  <script src="./asset-src.js?v=20260719-assets"></script>
+  <script src="./gradient.js?v=20260719-gradient"></script>
+  <script src="./image-process.js?v=20260719-key"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
-  <script src="./text-layout.js?v=20260717-textwrap"></script>
-  <script src="./app.js?v=20260717-textwrap"></script>
+  <script src="./text-layout.js?v=20260719-effects"></script>
+  <script src="./app.js?v=20260719-shadowfix"></script>
 </body>
 </html>

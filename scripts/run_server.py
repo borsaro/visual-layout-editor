@@ -2,15 +2,20 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
+import base64
 import json
 import mimetypes
 import os
 import re
 import socket
 import struct
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 CAMPAIGNS_ROOT = Path(os.environ.get(
     'ROBY_LAYOUT_CAMPAIGNS_ROOT',
     '/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER'
@@ -48,10 +53,15 @@ def under(child: Path, parent: Path) -> bool:
 
 def resolve_allowed_any(raw: str) -> Path:
     raw = unquote(raw or '').split('?', 1)[0].split('#', 1)[0].replace('\\', '/')
-    if raw.startswith('./') or raw.startswith('examples/') or raw.startswith('/examples/'):
+    if raw.startswith('_assets/') or raw == '_assets':
+        p = (CAMPAIGNS_ROOT / raw).resolve()
+    elif raw.startswith('./') or raw.startswith('examples/') or raw.startswith('/examples/'):
         p = (ROOT / raw.lstrip('/')).resolve()
-    else:
+    elif raw.startswith('/') or (len(raw) > 2 and raw[1] == ':'):
         p = Path(raw).expanduser().resolve()
+    else:
+        # Campaign-relative path (e.g. "my-campaign/source/hero.png")
+        p = (CAMPAIGNS_ROOT / raw).resolve()
     if not any(under(p, r) for r in ALLOWED_ROOTS):
         raise ValueError(f'Path outside allowed roots: {p}')
     return p
@@ -75,7 +85,14 @@ def public_path(path: Path) -> str:
     path = path.resolve()
     if under(path, ROOT):
         return './' + path.relative_to(ROOT).as_posix()
+    if under(path, CAMPAIGNS_ROOT):
+        return path.relative_to(CAMPAIGNS_ROOT).as_posix()
     return path.as_posix()
+
+
+def asset_src_for(path: Path) -> str:
+    """Prefer compact campaign-relative src for layout JSON (no base64, no /api wrapper)."""
+    return public_path(path)
 
 
 def rel_scope(path: Path):
@@ -234,16 +251,17 @@ def image_meta(path: Path):
         'has_layout': lp.exists(),
         'layout_path': public_path(lp) if lp.exists() else None,
         'preview_src': '/api/file?path=' + public_path(path),
+        'asset_src': asset_src_for(path),
     }
 
 
 def make_layout_from_image(path: Path):
     w, h = image_size(path)
-    src = '/api/file?path=' + public_path(path)
+    src = asset_src_for(path)
     return {
         'version': 1,
         'app': 'roby-visual-layout-editor',
-        'source_image': public_path(path),
+        'source_image': src,
         'canvas': {'width': w, 'height': h, 'background': '#ffffff'},
         'layers': [{
             'id': 'layer_background_image',
@@ -276,12 +294,14 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             if parsed.path == '/api/health':
-                self._json(200, {
-                    'ok': True,
-                    'app': 'roby-visual-layout-editor',
-                    'campaigns_root': str(CAMPAIGNS_ROOT),
-                    'editor_root': str(ROOT),
-                })
+                from api_catalog import check_export_ready, health_payload
+                export_ready, export_error = check_export_ready()
+                self._json(200, health_payload(
+                    campaigns_root=str(CAMPAIGNS_ROOT),
+                    editor_root=str(ROOT),
+                    export_ready=export_ready,
+                    export_error=export_error,
+                ))
                 return
             if parsed.path == '/api/list-layouts':
                 q = parse_qs(parsed.query)
@@ -350,12 +370,19 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path not in ['/api/save-layout', '/api/save-layout-as', '/api/delete-layout', '/api/create-layout-from-image']:
+        if parsed.path not in [
+            '/api/save-layout',
+            '/api/save-layout-as',
+            '/api/delete-layout',
+            '/api/create-layout-from-image',
+            '/api/export',
+            '/api/patch-layers',
+        ]:
             self.send_error(404, 'Unknown API endpoint')
             return
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            payload = json.loads(self.rfile.read(length).decode('utf-8'))
+            payload = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
             if parsed.path == '/api/create-layout-from-image':
                 image_path = resolve_allowed_image(payload.get('path'))
                 target = image_path.with_name(image_path.stem + '.layout.json')
@@ -365,6 +392,76 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     layout = make_layout_from_image(image_path)
                     target.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding='utf-8')
                 self._json(200, {'ok': True, 'path': public_path(target), 'layout': layout, 'created': True})
+                return
+
+            if parsed.path == '/api/patch-layers':
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                from patch_layers import apply_patches
+                result = apply_patches(layout, payload.get('patches') or [])
+                target.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding='utf-8')
+                body = {
+                    'ok': True,
+                    'path': public_path(target),
+                    'bytes': target.stat().st_size,
+                    **result,
+                }
+                if payload.get('return_layout'):
+                    body['layout'] = layout
+                self._json(200, body)
+                return
+
+            if parsed.path == '/api/export':
+                layout = payload.get('layout')
+                src_path = payload.get('path')
+                layout_file = None
+                if layout is None and src_path:
+                    layout_file = resolve_allowed_layout(src_path)
+                    layout = json.loads(layout_file.read_text(encoding='utf-8'))
+                if not isinstance(layout, dict):
+                    raise ValueError('Missing layout object or path')
+                from export_render import render_layout_png_bytes
+                origin = f'http://127.0.0.1:{PORT}'
+                png = render_layout_png_bytes(layout, origin=origin)
+                out_raw = payload.get('out')
+                saved = None
+                if out_raw:
+                    out_path = resolve_allowed_any(out_raw)
+                    if out_path.suffix.lower() != '.png':
+                        out_path = out_path.with_suffix('.png')
+                    if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                        raise ValueError('out outside allowed roots')
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_bytes(png)
+                    saved = public_path(out_path)
+                elif layout_file is not None and payload.get('auto_out', True):
+                    # Agent default: write beside layout in exports/
+                    out_path = (layout_file.parent / 'exports' / (layout_file.name.replace('.layout.json', '') + '.png')).resolve()
+                    if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                        raise ValueError('auto out outside allowed roots')
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_bytes(png)
+                    saved = public_path(out_path)
+
+                # Agent-friendly defaults: JSON when saved to disk; raw PNG only if download=true or return_base64
+                if payload.get('return_base64'):
+                    self._json(200, {
+                        'ok': True,
+                        'path': saved,
+                        'bytes': len(png),
+                        'png_base64': base64.b64encode(png).decode('ascii'),
+                    })
+                    return
+                if saved and not payload.get('download'):
+                    self._json(200, {'ok': True, 'path': saved, 'bytes': len(png)})
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Content-Length', str(len(png)))
+                if saved:
+                    self.send_header('X-Roby-Saved-Path', saved)
+                self.end_headers()
+                self.wfile.write(png)
                 return
 
             current_path = resolve_allowed_layout(payload.get('path'))

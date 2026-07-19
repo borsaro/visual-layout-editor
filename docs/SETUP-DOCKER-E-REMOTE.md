@@ -11,9 +11,10 @@ Guida per far girare l'editor in Docker su Mac (HermesRack) e aprirlo da Chrome 
 │                                                                  │
 │   Docker container "roby-visual-layout-editor"                   │
 │   ├── UI + API web          → :8765                              │
+│   ├── Playwright/Chromium   → POST /api/export (PNG)             │
 │   └── volumi montati:                                            │
 │       /app        ← FRAMEWORK/visual-layout-editor (codice UI)   │
-│       /campaigns  ← HermesRack/.../Liveoakbbq/campaigns (dati)  │
+│       /campaigns  ← HermesRack/.../campaigns (dati)              │
 │                                                                  │
 │   Hermes / Roby                                                  │
 │   └── skill visual-layout-editor → http://127.0.0.1:8765         │
@@ -56,6 +57,8 @@ cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
 docker compose up -d --build
 ```
 
+L’immagine installa **Playwright + Chromium** per `POST /api/export` (PNG server-side). Serve un rebuild dopo cambi a `Dockerfile` / `requirements.txt`.
+
 ### Comandi utili
 
 ```bash
@@ -63,18 +66,53 @@ docker compose ps
 docker compose logs -f
 docker compose restart
 docker compose down          # ferma il container (i file su HermesRack restano)
+docker compose up -d --build # rebuild (Playwright/deps)
 ```
 
 ### Verifica
 
 ```bash
 curl http://127.0.0.1:8765/api/health
-# → {"ok": true, "app": "roby-visual-layout-editor", ...}
+# → {"ok": true, "app": "roby-visual-layout-editor", "campaigns_root": "/campaigns", ...}
 
 curl 'http://127.0.0.1:8765/api/list-layouts?folder='
 ```
 
 Apri in locale: **http://127.0.0.1:8765**
+
+Nella topbar deve comparire `campaigns: /campaigns` (root montata nel container).
+
+### Catalogo API (agenti / LLM)
+
+```bash
+curl -s http://127.0.0.1:8765/api/health | python3 -m json.tool
+```
+
+In `endpoints` compaiono **`/api/export`** e **`/api/patch-layers`**. Controlla anche `features.export_ready` (serve Playwright nell’immagine).
+
+### Export PNG da API (nel container)
+
+```bash
+# Salva su disco campagne e risponde JSON {ok, path, bytes}
+curl -s -X POST http://127.0.0.1:8765/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"mia-campagna/foo.layout.json","out":"mia-campagna/exports/foo.png"}'
+
+# Solo path → scrive automaticamente …/exports/<nome>.png
+curl -s -X POST http://127.0.0.1:8765/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"mia-campagna/foo.layout.json"}'
+```
+
+### Lock layer da agente (senza UI)
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/patch-layers \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"mia-campagna/foo.layout.json","patches":[{"name":"Sfondo","locked":true}]}'
+```
+
+Oppure nel JSON: `"locked": true` sul layer.
 
 ---
 

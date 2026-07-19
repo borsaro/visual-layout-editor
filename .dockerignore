@@ -1,6 +1,14 @@
 .git
+.gitignore
 .env
 .DS_Store
 **/__pycache__
 **/*.pyc
+**/*.pyo
+.cursor
+agent-transcripts
 campaigns
+docs
+*.md
+examples/**/exports
+examples/**/generated-images

@@ -112,14 +112,7 @@ function textBlockDomPaddingTop(layer, layout) {
   return Math.max(0, offsetY - halfLeading);
 }
 
-function drawCanvasText(ctx, layer) {
-  const layout = measureTextLayout(layer);
-  const offsetY = textBlockOffsetY(layer, layout);
-  ctx.fillStyle = layer.color || '#000';
-  ctx.font = textFontCss(layer);
-  applyCanvasLetterSpacing(ctx, layer);
-  ctx.textBaseline = 'alphabetic';
-
+function paintCanvasTextLines(ctx, layer, layout, offsetY) {
   layout.lines.forEach((line, i) => {
     let x = layer.x;
     if (layer.align === 'center') x = layer.x + layer.w / 2;
@@ -130,4 +123,21 @@ function drawCanvasText(ctx, layer) {
     ctx.fillText(line, x, baselineY);
     drawTextDecorations(ctx, layer, line, x, baselineY, m.ascent, m.descent);
   });
+}
+
+function drawCanvasText(ctx, layer) {
+  const layout = measureTextLayout(layer);
+  const offsetY = textBlockOffsetY(layer, layout);
+  ctx.fillStyle = layer.color || '#000';
+  ctx.font = textFontCss(layer);
+  applyCanvasLetterSpacing(ctx, layer);
+  ctx.textBaseline = 'alphabetic';
+
+  if (typeof applyCanvasGlow === 'function' && applyCanvasGlow(ctx, layer.glow)) {
+    paintCanvasTextLines(ctx, layer, layout, offsetY);
+    clearCanvasShadow(ctx);
+  }
+  if (typeof applyCanvasShadow === 'function') applyCanvasShadow(ctx, layer.shadow);
+  paintCanvasTextLines(ctx, layer, layout, offsetY);
+  if (typeof clearCanvasShadow === 'function') clearCanvasShadow(ctx);
 }
