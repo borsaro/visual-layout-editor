@@ -131,8 +131,16 @@ function render() {
   canvas.innerHTML = '';
   [...state.layers].sort((a,b)=>(a.z||0)-(b.z||0)).filter(layerVisible).forEach(layer => canvas.appendChild(renderLayer(layer)));
   if(state.showSafeGuides) canvas.appendChild(renderSafeGuides());
+  // Mask ABOVE layers so overflow (incl. screen blend) is dimmed; hole = artboard
+  canvas.appendChild(renderCanvasOverflowMask());
   renderLayerList();
   renderProps();
+}
+function renderCanvasOverflowMask(){
+  const mask = document.createElement('div');
+  mask.className = 'canvasOverflowMask';
+  mask.setAttribute('aria-hidden', 'true');
+  return mask;
 }
 
 function renderLayer(layer) {
@@ -147,18 +155,11 @@ function renderLayer(layer) {
   });
   applyBlendDom(el, layer);
   if (layer.type === 'text') {
-    // Outer keeps text-shadow/glow; inner clips glyph overflow so shadows are not boxed.
+    // text-shadow must live on the same node as the glyphs, with overflow:visible
+    // (inherited text-shadow + child overflow:hidden was boxing the blur).
     const layout = measureTextLayout(layer);
     const padTop = textBlockDomPaddingTop(layer, layout);
     Object.assign(el.style, {
-      display: 'block',
-      boxSizing: 'border-box',
-      height: layer.h + 'px',
-      overflow: 'visible',
-    });
-    const inner = document.createElement('div');
-    inner.className = 'textClip';
-    Object.assign(inner.style, {
       fontFamily: layer.fontFamily || layer.font || 'Arial',
       fontSize: layer.fontSize + 'px',
       fontWeight: layer.fontWeight || '400',
@@ -167,28 +168,19 @@ function renderLayer(layer) {
       textAlign: layer.align || 'left',
       display: 'block',
       boxSizing: 'border-box',
-      width: '100%',
-      height: '100%',
+      height: layer.h + 'px',
       paddingTop: padTop + 'px',
-      overflow: 'hidden',
+      overflow: 'visible',
     });
-    applyTextStyleDom(inner, layer, layout.lines);
+    applyTextStyleDom(el, layer, layout.lines);
     applyLayerEffectsDom(el, layer);
-    el.appendChild(inner);
     el.addEventListener('dblclick', (ev)=>startInlineTextEdit(ev, layer.id));
   } else if (layer.type === 'rect') {
-    Object.assign(el.style, { background: layer.fill || 'transparent', border: `${layer.strokeWidth||0}px solid ${layer.stroke||'transparent'}`, borderRadius: (layer.radius||0)+'px' });
+    Object.assign(el.style, { background: layer.fill || 'transparent', border: `${layer.strokeWidth||0}px solid ${layer.stroke||'transparent'}`, borderRadius: (layer.radius||0)+'px', overflow: 'visible' });
     applyLayerEffectsDom(el, layer);
   } else if (layer.type === 'image') {
-    const clip = document.createElement('div'); clip.className='imageClip';
     const img = document.createElement('img'); img.alt = layer.name || '';
     const crop = layer.crop ? normalizedCrop(layer) : null;
-    if(crop){
-      Object.assign(img.style, { position:'absolute', left:(-crop.x/crop.w*100)+'%', top:(-crop.y/crop.h*100)+'%', width:(100/crop.w)+'%', height:(100/crop.h)+'%', objectFit:'fill' });
-    } else {
-      img.style.objectFit = layer.fit || 'contain';
-    }
-    // drop-shadow on <img> follows PNG alpha; on .layer/.imageClip it becomes a hard box
     applyLayerEffectsDom(img, layer);
     if(typeof keyBlackEnabled === 'function' && keyBlackEnabled(layer)){
       const loader = new Image();
@@ -198,7 +190,39 @@ function renderLayer(layer) {
     } else {
       img.src = resolveAssetUrl(layer.src);
     }
-    clip.appendChild(img); el.appendChild(clip);
+    if(crop){
+      // Pad clip by blur so overflow:hidden does not hard-cut drop-shadow
+      const bleed = typeof shadowBleedPx === 'function' ? shadowBleedPx(layer.shadow) : 0;
+      const clip = document.createElement('div');
+      clip.className = 'imageClip';
+      if(bleed > 0){
+        Object.assign(clip.style, {
+          inset: `-${bleed}px`,
+          width: `calc(100% + ${bleed * 2}px)`,
+          height: `calc(100% + ${bleed * 2}px)`,
+        });
+      }
+      Object.assign(img.style, {
+        position: 'absolute',
+        left: (bleed - crop.x / crop.w * layer.w) + 'px',
+        top: (bleed - crop.y / crop.h * layer.h) + 'px',
+        width: (layer.w / crop.w) + 'px',
+        height: (layer.h / crop.h) + 'px',
+        objectFit: 'fill',
+      });
+      clip.appendChild(img);
+      el.appendChild(clip);
+    } else {
+      // Direct <img>: drop-shadow follows PNG alpha past the selection box
+      Object.assign(img.style, {
+        display: 'block',
+        width: '100%',
+        height: '100%',
+        objectFit: layer.fit || 'contain',
+        pointerEvents: 'none',
+      });
+      el.appendChild(img);
+    }
   } else if (layer.type === 'gradient') {
     Object.assign(el.style, {
       background: gradientCssBackground(layer),

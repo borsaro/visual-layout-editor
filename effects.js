@@ -29,6 +29,21 @@ function shadowCss(shadow) {
   return `${Number(shadow.offsetX) || 0}px ${Number(shadow.offsetY) || 0}px ${Number(shadow.blur) || 0}px ${c}`;
 }
 
+/** Extra pixels needed so overflow:hidden parents do not box-clip blur/offset. */
+function shadowBleedPx(shadow, glow) {
+  let bleed = 0;
+  if (effectEnabled(shadow)) {
+    bleed = Math.max(
+      bleed,
+      Math.ceil(Math.abs(Number(shadow.offsetX) || 0) + Math.abs(Number(shadow.offsetY) || 0) + (Number(shadow.blur) || 0) * 2 + 2),
+    );
+  }
+  if (effectEnabled(glow)) {
+    bleed = Math.max(bleed, Math.ceil((Number(glow.blur) || 0) * 3 + 2));
+  }
+  return bleed;
+}
+
 function glowCss(glow) {
   if (!effectEnabled(glow)) return '';
   const c = colorWithOpacity(glow.color, glow.opacity);
