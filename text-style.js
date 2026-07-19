@@ -36,14 +36,15 @@ function textDecorationCss(layer) {
   return parts.length ? parts.join(' ') : 'none';
 }
 
-function applyTextStyleDom(el, layer) {
-  const transform = layerTextTransform(layer);
-  const useCssTransform = transform !== 'camelCase';
-  el.textContent = useCssTransform ? (layer.text || '') : displayText(layer);
+function applyTextStyleDom(el, layer, lines) {
+  // Display already-transformed + soft-wrapped lines (same as canvas). No CSS text-transform.
+  const displayLines = lines || (typeof wrapTextLines === 'function' ? wrapTextLines(layer) : displayText(layer).split('\n'));
+  el.textContent = displayLines.join('\n');
   el.style.fontStyle = layer.fontStyle === 'italic' ? 'italic' : 'normal';
   el.style.textDecoration = textDecorationCss(layer);
-  el.style.textTransform = useCssTransform ? transform : 'none';
+  el.style.textTransform = 'none';
   el.style.letterSpacing = `${Number(layer.letterSpacing) || 0}px`;
+  el.style.whiteSpace = 'pre';
 }
 
 function drawTextDecorations(ctx, layer, line, x, baselineY, ascent, descent) {

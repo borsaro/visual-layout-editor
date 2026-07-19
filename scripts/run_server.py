@@ -259,6 +259,11 @@ def make_layout_from_image(path: Path):
 
 
 class RobyLayoutHandler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Local editor assets change often; avoid sticky browser cache of JS/CSS.
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
+
     def _json(self, status, data):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8')
         self.send_response(status)

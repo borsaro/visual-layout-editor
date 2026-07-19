@@ -125,7 +125,7 @@ function renderLayer(layer) {
       paddingTop: padTop + 'px',
       overflow: 'hidden',
     });
-    applyTextStyleDom(el, layer);
+    applyTextStyleDom(el, layer, layout.lines);
     el.addEventListener('dblclick', (ev)=>startInlineTextEdit(ev, layer.id));
   } else if (layer.type === 'rect') {
     Object.assign(el.style, { background: layer.fill || 'transparent', border: `${layer.strokeWidth||0}px solid ${layer.stroke||'transparent'}`, borderRadius: (layer.radius||0)+'px' });
@@ -221,6 +221,7 @@ function startInlineTextEdit(ev, id){
   el.classList.add('editing');
   el.textContent = layer.text || '';
   el.style.textTransform = 'none';
+  el.style.whiteSpace = 'pre-wrap';
   el.contentEditable = 'true';
   el.focus();
   document.execCommand?.('selectAll', false, null);

@@ -53,7 +53,7 @@
 /* Prevent browser context menu from stealing Ctrl/Cmd crop drags on layer handles */
 .layer,.resizeHandle{-webkit-user-select:none;user-select:none}
 
-.alignActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 12px}.alignActions button{font-size:12px;padding:7px}.layer.text{white-space:pre-wrap}.layer{transform-box:border-box}
+.alignActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 12px}.alignActions button{font-size:12px;padding:7px}.layer.text{white-space:pre}.layer{transform-box:border-box}
 
 /* Right properties panel: independent vertical scroll for long property/tool sections */
 .panel.right{

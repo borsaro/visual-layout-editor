@@ -21,14 +21,66 @@ function applyCanvasLetterSpacing(ctx, layer) {
   if ('letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`;
 }
 
+function prepareMeasureCtx(layer) {
+  const ctx = getMeasureCtx();
+  ctx.font = textFontCss(layer);
+  applyCanvasLetterSpacing(ctx, layer);
+  return ctx;
+}
+
+/** Soft-wrap one hard line to maxWidth (canvas font metrics). */
+function wrapLineToWidth(ctx, line, maxWidth) {
+  if (line === '') return [''];
+  if (maxWidth <= 0 || ctx.measureText(line).width <= maxWidth) return [line];
+
+  const out = [];
+  let rest = line;
+  while (rest.length) {
+    if (ctx.measureText(rest).width <= maxWidth) {
+      out.push(rest);
+      break;
+    }
+    let lo = 1;
+    let hi = rest.length;
+    let fit = 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (ctx.measureText(rest.slice(0, mid)).width <= maxWidth) {
+        fit = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    const spaceIdx = rest.lastIndexOf(' ', fit);
+    if (spaceIdx > 0) {
+      out.push(rest.slice(0, spaceIdx));
+      rest = rest.slice(spaceIdx + 1);
+    } else {
+      out.push(rest.slice(0, fit));
+      rest = rest.slice(fit);
+    }
+  }
+  return out.length ? out : [''];
+}
+
+/** Hard \\n + soft wrap at layer.w — shared by editor measure and canvas export. */
+function wrapTextLines(layer) {
+  const ctx = prepareMeasureCtx(layer);
+  const maxW = Number(layer.w) || 0;
+  const lines = [];
+  for (const hard of displayText(layer).split('\n')) {
+    lines.push(...wrapLineToWidth(ctx, hard, maxW));
+  }
+  return lines;
+}
+
 function measureTextLayout(layer) {
   const fontSize = Number(layer.fontSize) || 32;
   const lineRatio = Number(layer.lineHeight) || 1.1;
   const lh = fontSize * lineRatio;
-  const lines = displayText(layer).split('\n');
-  const ctx = getMeasureCtx();
-  ctx.font = textFontCss(layer);
-  applyCanvasLetterSpacing(ctx, layer);
+  const lines = wrapTextLines(layer);
+  const ctx = prepareMeasureCtx(layer);
 
   const metrics = lines.map((line) => {
     const m = ctx.measureText(line || '\u00a0');
@@ -75,7 +127,7 @@ function drawCanvasText(ctx, layer) {
     ctx.textAlign = layer.align || 'left';
     const baselineY = layer.y + offsetY + layout.blockAscent + i * layout.lh;
     const m = layout.metrics[i] || { ascent: layout.fontSize * 0.78, descent: layout.fontSize * 0.22 };
-    ctx.fillText(line, x, baselineY, layer.w);
+    ctx.fillText(line, x, baselineY);
     drawTextDecorations(ctx, layer, line, x, baselineY, m.ascent, m.descent);
   });
 }
