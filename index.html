@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260719-layerdnd" />
+  <link rel="stylesheet" href="./styles.css?v=20260721-xy-copycode" />
 </head>
 <body>
   <header class="topbar">
@@ -140,9 +140,12 @@
               </select>
             </label>
           </div>
-          <label>Font
-            <select id="propFontFamily" size="1"></select>
-          </label>
+          <div class="fontRow">
+            <label class="fontSelectWrap">Font
+              <select id="propFontFamily" size="1"></select>
+            </label>
+            <button type="button" id="copyFontInfoBtn" class="fontCopyBtn" title="Copia info font">Copia stile</button>
+          </div>
           <p class="muted hint">Frecce ↑↓ sul menu: anteprima live senza perdere la selezione.</p>
           <p id="fontAvailabilityHint" class="muted hint"></p>
           <div class="styleToggles" id="textStyleToggles">
@@ -291,6 +294,6 @@
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
-  <script src="./app.js?v=20260721-host-fonts"></script>
+  <script src="./app.js?v=20260721-xy-copycode"></script>
 </body>
 </html>

@@ -171,7 +171,12 @@ function renderLayer(layer) {
   const el = document.createElement('div');
   el.className = `layer ${layer.type}` + (isSelected(layer.id) ? ' selected' : '') + (layerLocked(layer) ? ' locked' : '');
   el.dataset.id = layer.id;
-  el.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
+  el.oncontextmenu = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openLayerContextMenu(ev, layer.id);
+    return false;
+  };
   Object.assign(el.style, {
     left: layer.x + 'px', top: layer.y + 'px', width: layer.w + 'px', height: layer.h + 'px',
     zIndex: layer.z || 1, opacity: layer.opacity ?? 1,
@@ -369,46 +374,127 @@ function renderLayerList(){
     box.appendChild(row);
   });
 }
-function renderProps(){
-  const l=selected(); $('emptyProps').hidden=!!l; $('props').hidden=!l; if(!l) return;
-  setVal('propName',l.name); setVal('propX',Math.round(l.x)); setVal('propY',Math.round(l.y)); setVal('propW',Math.round(l.w)); setVal('propH',Math.round(l.h)); setVal('propZ',l.z||1); setVal('propOpacity',l.opacity ?? 1); setVal('propRotation',l.rotation || 0);
-  populateBlendSelect($('propBlendMode'), l.blendMode);
-  const vis=$('propVisible'); if(vis) vis.checked = layerVisible(l);
-  const lockEl=$('propLocked'); if(lockEl) lockEl.checked = layerLocked(l);
-  $('textProps').hidden=l.type!=='text'; $('boxProps').hidden=!(l.type==='rect'); $('imageProps').hidden=l.type!=='image';
-  const gradProps=$('gradientProps'); if(gradProps) gradProps.hidden=l.type!=='gradient';
-  if(l.type==='text'){
-    const ff=l.fontFamily||l.font||'Arial';
-    populateFontSelect(ff);
-    setVal('propText',l.text); setVal('propFontSize',l.fontSize); setVal('propFontWeight',l.fontWeight||'400'); setVal('propFontFamily',ff); setVal('propColor',l.color||'#000000'); setVal('propAlign',l.align||'left'); setVal('propVAlign',l.vAlign||'top'); setVal('propLineHeight',l.lineHeight||1.1);
-    setVal('propTextTransform', l.textTransform || 'none'); setVal('propLetterSpacing', l.letterSpacing ?? 0);
-    syncTextStyleToggles(l);
+/** scope 'single' = solo layer primario; altrimenti tutti i selezionati (filtrati per types). */
+const PROP_RULES = {
+  z:{scope:'single'}, name:{scope:'single'},
+  text:{scope:'single',types:['text']}, src:{scope:'single',types:['image']},
+  x:{}, y:{}, w:{}, h:{}, rotation:{}, opacity:{}, blendMode:{}, visible:{}, locked:{},
+  shadow:{types:['text','image','rect','gradient']},
+  fontSize:{types:['text']}, fontWeight:{types:['text']}, fontFamily:{types:['text']},
+  fontStyle:{types:['text']}, underline:{types:['text']}, strikethrough:{types:['text']},
+  textTransform:{types:['text']}, letterSpacing:{types:['text']}, color:{types:['text']},
+  align:{types:['text']}, vAlign:{types:['text']}, lineHeight:{types:['text']}, glow:{types:['text']},
+  fill:{types:['rect']}, stroke:{types:['rect']}, strokeWidth:{types:['rect']}, radius:{types:['rect']},
+  fit:{types:['image']}, adjust:{types:['image']}, keyBlack:{types:['image']},
+  gradientType:{types:['gradient']}, angle:{types:['gradient']}, stops:{types:['gradient']},
+};
+const PROP_OBJECT_KEYS = new Set(['shadow','glow','adjust','keyBlack','stops']);
+
+function targetLayersForKey(key){
+  const rule = PROP_RULES[key] || {};
+  const primary = selected();
+  if(rule.scope === 'single'){
+    if(!primary) return [];
+    if(rule.types && !rule.types.includes(primary.type)) return [];
+    return [primary];
   }
-  if(l.type==='rect'){ setVal('propFill',rgbToHex(l.fill||'#eb0029')); setVal('propStroke',rgbToHex(l.stroke||'#eb0029')); setVal('propStrokeWidth',l.strokeWidth||0); setVal('propRadius',l.radius||0); }
-  if(l.type==='image'){
-    setVal('propFit',l.fit||'contain');
-    setVal('propImageSrc', isEmbeddedSrc(l.src) ? '(base64 incorporato)' : (l.src || ''));
-    const srcHint=$('imageSrcHint');
-    if(srcHint) srcHint.textContent = isEmbeddedSrc(l.src)
+  let targets = selectedLayers();
+  if(rule.types) targets = targets.filter((l) => rule.types.includes(l.type));
+  if(!targets.length && primary){
+    if(!rule.types || rule.types.includes(primary.type)) targets = [primary];
+  }
+  return targets;
+}
+
+function clonePropValue(key, value){
+  if(value == null || !PROP_OBJECT_KEYS.has(key) || typeof value !== 'object') return value;
+  return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+}
+
+function renderProps(){
+  const sel = selectedLayers();
+  const primary = selected() || sel[0] || null;
+  $('emptyProps').hidden = !!sel.length;
+  $('props').hidden = !sel.length;
+  if(!sel.length || !primary) return;
+
+  const has = (t) => sel.some((l) => l.type === t);
+  const repr = (t) => (primary.type === t ? primary : sel.find((l) => l.type === t));
+
+  setVal('propName', primary.name);
+  setVal('propX', Math.round(primary.x));
+  setVal('propY', Math.round(primary.y));
+  setVal('propW', Math.round(primary.w));
+  setVal('propH', Math.round(primary.h));
+  setVal('propZ', primary.z || 1);
+  setVal('propOpacity', primary.opacity ?? 1);
+  setVal('propRotation', primary.rotation || 0);
+  populateBlendSelect($('propBlendMode'), primary.blendMode);
+  const vis = $('propVisible'); if(vis) vis.checked = layerVisible(primary);
+  const lockEl = $('propLocked'); if(lockEl) lockEl.checked = layerLocked(primary);
+
+  $('textProps').hidden = !has('text');
+  $('boxProps').hidden = !has('rect');
+  $('imageProps').hidden = !has('image');
+  const gradProps = $('gradientProps'); if(gradProps) gradProps.hidden = !has('gradient');
+
+  const textL = repr('text');
+  if(textL){
+    const ff = textL.fontFamily || textL.font || 'Arial';
+    populateFontSelect(ff);
+    setVal('propText', textL.text);
+    setVal('propFontSize', textL.fontSize);
+    setVal('propFontWeight', textL.fontWeight || '400');
+    setVal('propFontFamily', ff);
+    setVal('propColor', textL.color || '#000000');
+    setVal('propAlign', textL.align || 'left');
+    setVal('propVAlign', textL.vAlign || 'top');
+    setVal('propLineHeight', textL.lineHeight || 1.1);
+    setVal('propTextTransform', textL.textTransform || 'none');
+    setVal('propLetterSpacing', textL.letterSpacing ?? 0);
+    syncTextStyleToggles(textL);
+  }
+
+  const rectL = repr('rect');
+  if(rectL){
+    setVal('propFill', rgbToHex(rectL.fill || '#eb0029'));
+    setVal('propStroke', rgbToHex(rectL.stroke || '#eb0029'));
+    setVal('propStrokeWidth', rectL.strokeWidth || 0);
+    setVal('propRadius', rectL.radius || 0);
+  }
+
+  const imageL = repr('image');
+  if(imageL){
+    setVal('propFit', imageL.fit || 'contain');
+    setVal('propImageSrc', isEmbeddedSrc(imageL.src) ? '(base64 incorporato)' : (imageL.src || ''));
+    const srcHint = $('imageSrcHint');
+    if(srcHint) srcHint.textContent = isEmbeddedSrc(imageL.src)
       ? 'Sorgente pesante (data URI). Preferisci un path tipo _assets/…'
       : 'Path relativo alla root campagne (es. _assets/fuoco/file.png).';
-    syncKeyBlackProps(l);
-    syncImageAdjustProps(l);
+    syncKeyBlackProps(imageL);
+    syncImageAdjustProps(imageL);
   }
-  if(l.type==='gradient') syncGradientProps(l);
+
+  const gradL = repr('gradient');
+  if(gradL) syncGradientProps(gradL);
+
   const fxBox = $('effectProps');
-  if(fxBox) fxBox.hidden = !(l.type==='text' || l.type==='image' || l.type==='rect' || l.type==='gradient');
+  if(fxBox) fxBox.hidden = !(has('text') || has('image') || has('rect') || has('gradient'));
   const glowBox = $('glowProps');
-  if(glowBox) glowBox.hidden = l.type!=='text';
-  syncEffectInputs('propShadow', l.shadow, defaultShadow());
-  if(l.type==='text') syncEffectInputs('propGlow', l.glow, defaultGlow());
+  if(glowBox) glowBox.hidden = !has('text');
+  const shadowSrc = has('text') ? (textL || primary) : (imageL || rectL || gradL || primary);
+  syncEffectInputs('propShadow', shadowSrc.shadow, defaultShadow());
+  if(textL) syncEffectInputs('propGlow', textL.glow, defaultGlow());
 }
 function setVal(id,v){ const el=$(id); if(el) el.value = v ?? ''; }
 function beginPropHistory(){ if(!propHistoryPending){ pushHistory(); propHistoryPending = true; } }
 function commitPropHistory(){ propHistoryPending = false; if(propHistoryTimer){ clearTimeout(propHistoryTimer); propHistoryTimer = null; } }
 function updateProp(key, value, opts={}){
-  const l=selected(); if(!l) return;
-  if(layerLocked(l) && key !== 'locked' && key !== 'visible' && key !== 'name'){
+  const targets = targetLayersForKey(key);
+  if(!targets.length) return;
+  const unlockKeys = key === 'locked' || key === 'visible' || key === 'name';
+  const writable = targets.filter((l) => unlockKeys || !layerLocked(l));
+  if(!writable.length){
     showToast('Layer bloccato — sblocca per modificare');
     return;
   }
@@ -421,7 +507,7 @@ function updateProp(key, value, opts={}){
       pushHistory();
     }
   }
-  l[key]=value;
+  writable.forEach((l) => { l[key] = clonePropValue(key, value); });
   markDirty();
   render();
 }
@@ -591,10 +677,14 @@ let fontBrowseHistoryStarted = false;
 
 /** Live font preview while arrowing the <select> — keeps layer selection + select focus. */
 function applyFontFamilyLive(family){
-  const l = selected();
-  if(!l || l.type !== 'text') return;
   const name = String(family || '').trim();
-  if(!name || (l.fontFamily || l.font) === name) {
+  const targets = targetLayersForKey('fontFamily').filter((l) => !layerLocked(l));
+  if(!name || !targets.length){
+    updateFontAvailabilityHint(name);
+    return;
+  }
+  const changed = targets.some((l) => (l.fontFamily || l.font) !== name);
+  if(!changed){
     updateFontAvailabilityHint(name);
     return;
   }
@@ -602,9 +692,8 @@ function applyFontFamilyLive(family){
     pushHistory();
     fontBrowseHistoryStarted = true;
   }
-  l.fontFamily = name;
+  targets.forEach((l) => { l.fontFamily = name; refreshLayerOnStage(l); });
   markDirty();
-  refreshLayerOnStage(l);
   updateFontAvailabilityHint(name);
 }
 
@@ -655,6 +744,22 @@ function bindFontFamilyLiveBrowse(){
       waitForFont?.(sel.value)?.then(()=>render());
     }));
   });
+}
+
+const WEIGHT_NAMES = {
+  100:'Thin', 200:'Extra Light', 300:'Light', 400:'Regular', 500:'Medium',
+  600:'Semi Bold', 700:'Bold', 800:'Extra Bold', 900:'Black',
+};
+function fontInfoString(l){
+  const parts = [
+    `font: ${l.fontFamily || l.font || 'Arial'}`,
+    `Size: ${Number(l.fontSize) || 0}px`,
+    WEIGHT_NAMES[Number(l.fontWeight) || 400] || String(l.fontWeight || '400'),
+  ];
+  if(l.fontStyle === 'italic') parts.push('Italic');
+  if(l.underline) parts.push('Underline');
+  if(l.strikethrough) parts.push('Strike');
+  return parts.join(' - ');
 }
 
 function bindProps(){
@@ -717,14 +822,32 @@ function bindProps(){
   bindEffect('propGlow', 'glow', false);
   document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
     btn.onclick=()=>{
-      const l=selected(); if(!l || l.type!=='text') return;
-      pushHistory();
       const key=btn.dataset.styleToggle;
-      if(key==='italic') l.fontStyle = l.fontStyle==='italic' ? 'normal' : 'italic';
-      else l[key] = !l[key];
+      const propKey = key === 'italic' ? 'fontStyle' : key;
+      const targets = targetLayersForKey(propKey).filter((l) => !layerLocked(l));
+      if(!targets.length) return;
+      pushHistory();
+      const primary = selected() || targets[0];
+      const nextItalic = primary.fontStyle === 'italic' ? 'normal' : 'italic';
+      const nextBool = !primary[key];
+      targets.forEach((l)=>{
+        if(key==='italic') l.fontStyle = nextItalic;
+        else l[key] = nextBool;
+      });
       markDirty();
       render();
     };
+  });
+  $('copyFontInfoBtn')?.addEventListener('click', async ()=>{
+    const l = selected();
+    if(!l || l.type !== 'text') return;
+    const text = fontInfoString(l);
+    try{
+      await navigator.clipboard.writeText(text);
+      showToast('Copiato: ' + text);
+    }catch(e){
+      showToast('Copia fallita');
+    }
   });
 }
 
@@ -1405,29 +1528,107 @@ function isTypingTarget(el){
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
+function layoutFileRef(){
+  if(state.currentLayoutPath) return state.currentLayoutPath;
+  if(state.localFileHandle?.name) return state.localFileHandle.name + ' (locale)';
+  if(state.loadedJsonFilename) return state.loadedJsonFilename + ' (locale)';
+  return '(nessun file aperto)';
+}
+
+function buildLlmLayerClipboard(layers){
+  const list = (layers || []).map((l) => JSON.parse(JSON.stringify(l)));
+  const body = list.length === 1
+    ? JSON.stringify(list[0], null, 2)
+    : JSON.stringify(list, null, 2);
+  return [
+    `## Layer selezionati (${list.length})`,
+    '```json',
+    body,
+    '```',
+    '',
+    `file: ${layoutFileRef()}`,
+  ].join('\n');
+}
+
+async function copySelectedLayersCode(){
+  const layers = selectedLayers();
+  if(!layers.length){
+    showToast('Nessun layer selezionato');
+    return;
+  }
+  const text = buildLlmLayerClipboard(layers);
+  try{
+    await navigator.clipboard.writeText(text);
+    showToast(`Codice copiato (${layers.length} layer)`);
+  }catch(e){
+    showToast('Copia codice fallita');
+  }
+}
+
+function hideLayerContextMenu(){
+  const menu = $('layerContextMenu');
+  if(menu) menu.hidden = true;
+}
+
+function ensureLayerContextMenu(){
+  let menu = $('layerContextMenu');
+  if(menu) return menu;
+  menu = document.createElement('div');
+  menu.id = 'layerContextMenu';
+  menu.className = 'layerContextMenu';
+  menu.hidden = true;
+  menu.innerHTML = '<button type="button" data-action="copy-code">Copia codice</button>';
+  document.body.appendChild(menu);
+  menu.addEventListener('mousedown', (ev) => ev.stopPropagation());
+  menu.addEventListener('click', async (ev) => {
+    const action = ev.target?.closest?.('[data-action]')?.dataset?.action;
+    hideLayerContextMenu();
+    if(action === 'copy-code') await copySelectedLayersCode();
+  });
+  return menu;
+}
+
+function openLayerContextMenu(ev, layerId){
+  if(!isSelected(layerId)){
+    selectOnly(layerId);
+    render();
+  }
+  const menu = ensureLayerContextMenu();
+  menu.hidden = false;
+  const pad = 8;
+  const mw = menu.offsetWidth || 160;
+  const mh = menu.offsetHeight || 40;
+  let left = ev.clientX;
+  let top = ev.clientY;
+  if(left + mw > window.innerWidth - pad) left = window.innerWidth - mw - pad;
+  if(top + mh > window.innerHeight - pad) top = window.innerHeight - mh - pad;
+  menu.style.left = Math.max(pad, left) + 'px';
+  menu.style.top = Math.max(pad, top) + 'px';
+}
+
 function bindKeyboardShortcuts(){
   document.addEventListener('contextmenu', (ev)=>{
+    if(ev.target?.closest?.('.layerContextMenu')) return;
     if(ev.target?.closest?.('.layer, .resizeHandle, #canvas')) ev.preventDefault();
   }, true);
+  document.addEventListener('mousedown', (ev)=>{
+    if(!ev.target?.closest?.('.layerContextMenu')) hideLayerContextMenu();
+  }, true);
   document.addEventListener('keydown', (ev)=>{
-    if(isTypingTarget(ev.target)) return;
+    if(ev.key === 'Escape') hideLayerContextMenu();
     const mod = ev.metaKey || ev.ctrlKey;
     const key = ev.key.toLowerCase();
+    // Undo/redo before typing-target guard so panel focus (font select, inputs) still works
+    if(mod && (key === 'z' || key === 'y') && !ev.target?.isContentEditable){
+      ev.preventDefault();
+      if(key === 'z' && !ev.shiftKey) undo(); else redo();
+      markDirty();
+      return;
+    }
+    if(isTypingTarget(ev.target)) return;
     if(mod && key === 's'){
       ev.preventDefault();
       saveJsonOverwrite();
-      return;
-    }
-    if(mod && key === 'z'){
-      ev.preventDefault();
-      if(ev.shiftKey) redo(); else undo();
-      markDirty();
-      return;
-    }
-    if(mod && key === 'y'){
-      ev.preventDefault();
-      redo();
-      markDirty();
       return;
     }
     if(mod && key === 'd'){
