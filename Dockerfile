@@ -11,10 +11,11 @@ ENV PYTHONUNBUFFERED=1 \
     # Chromium in container: less /dev/shm pressure
     LANG=C.UTF-8
 
-# System deps for Playwright Chromium + curl for health/debug
+# System deps for Playwright Chromium + curl + fontconfig (host font mounts)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
+      fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

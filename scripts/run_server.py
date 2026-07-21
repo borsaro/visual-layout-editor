@@ -28,6 +28,7 @@ HOST = os.environ.get('ROBY_LAYOUT_EDITOR_HOST', '127.0.0.1')
 
 ALLOWED_ROOTS = [ROOT.resolve(), CAMPAIGNS_ROOT]
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp'}
+FONT_EXTS = {'.ttf', '.otf', '.woff', '.woff2', '.ttc'}
 
 
 def local_lan_ip() -> str | None:
@@ -78,6 +79,14 @@ def resolve_allowed_image(raw: str) -> Path:
     p = resolve_allowed_any(raw)
     if p.suffix.lower() not in IMAGE_EXTS:
         raise ValueError('Only jpg/png/webp images are allowed')
+    return p
+
+
+def resolve_allowed_file(raw: str) -> Path:
+    """Resolve safe editor assets, including images and brand fonts."""
+    p = resolve_allowed_any(raw)
+    if p.suffix.lower() not in IMAGE_EXTS | FONT_EXTS:
+        raise ValueError('Only image and font files are allowed')
     return p
 
 
@@ -354,12 +363,29 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == '/api/file':
                 q = parse_qs(parsed.query)
-                p = resolve_allowed_image((q.get('path') or [''])[0])
+                p = resolve_allowed_file((q.get('path') or [''])[0])
                 data = p.read_bytes()
                 ctype = mimetypes.guess_type(str(p))[0] or 'application/octet-stream'
                 self.send_response(200)
                 self.send_header('Content-Type', ctype)
                 self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if parsed.path == '/api/fonts':
+                from host_fonts import fonts_payload
+                self._json(200, fonts_payload())
+                return
+            if parsed.path == '/api/font-file':
+                from host_fonts import resolve_font_file
+                q = parse_qs(parsed.query)
+                p = resolve_font_file((q.get('id') or [''])[0])
+                data = p.read_bytes()
+                ctype = mimetypes.guess_type(str(p))[0] or 'font/ttf'
+                self.send_response(200)
+                self.send_header('Content-Type', ctype)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'public, max-age=86400')
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -492,6 +518,12 @@ os.chdir(ROOT)
 print('Roby Visual Layout Editor')
 print(f'Serving: {ROOT}')
 print(f'Campaign layouts/assets: {CAMPAIGNS_ROOT}')
+try:
+    from host_fonts import fonts_roots, scan_host_fonts
+    _fonts = scan_host_fonts()
+    print(f'Host fonts: {len(_fonts)} families from {fonts_roots()}')
+except Exception as e:
+    print(f'Host fonts: unavailable ({e})')
 print(f'Bind: {HOST}:{PORT}')
 print(f'Open local: http://127.0.0.1:{PORT}')
 if HOST in ('0.0.0.0', ''):

@@ -9,7 +9,7 @@ ALLOWED_PATCH_KEYS = {
     'blendMode', 'src', 'fit', 'text', 'fontSize', 'fontWeight', 'fontFamily',
     'fontStyle', 'color', 'align', 'vAlign', 'lineHeight', 'letterSpacing',
     'textTransform', 'fill', 'stroke', 'strokeWidth', 'radius',
-    'shadow', 'glow', 'keyBlack', 'gradientType', 'angle', 'stops',
+    'shadow', 'glow', 'keyBlack', 'adjust', 'gradientType', 'angle', 'stops',
 }
 
 

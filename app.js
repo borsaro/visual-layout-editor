@@ -4,7 +4,7 @@ const state = {
   layers: [],
   selectedId: null,
   selectedIds: [],
-  zoom: 42,
+  zoom: 100,
   history: [],
   future: [],
   currentLayoutPath: null,
@@ -116,25 +116,49 @@ function defaultImage(src, name='Immagine') {
 // defaultGradient() lives in gradient.js
 function nextZ(){ return state.layers.length ? Math.max(...state.layers.map(l=>Number(l.z)||0))+1 : 1; }
 
-function render() {
-  const canvas = $('canvas');
-  canvas.style.width = state.canvas.width + 'px';
-  canvas.style.height = state.canvas.height + 'px';
-  canvas.style.background = state.canvas.background || '#fff';
-  $('stage').style.transform = `scale(${state.zoom/100})`;
+function updateCanvasInfo(){
   const selCount = state.selectedIds.length ? ` · ${state.selectedIds.length} selezionati` : '';
   const fileInfo = ` · ${currentFileLabel()}`;
   const dirtyInfo = state.dirty ? ' · ● modificato' : '';
   const hiddenCount = state.layers.filter(l => !layerVisible(l)).length;
   const hiddenInfo = hiddenCount ? ` · ${hiddenCount} nascosti` : '';
-  $('canvasInfo').innerHTML = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount}${hiddenInfo} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}${dirtyInfo ? `<span class="dirtyMark">${dirtyInfo}</span>` : ''}`;
+  const info = $('canvasInfo');
+  if(info) info.innerHTML = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount}${hiddenInfo} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}${dirtyInfo ? `<span class="dirtyMark">${dirtyInfo}</span>` : ''}`;
+}
+
+/** @param {{ skipProps?: boolean }} [opts] skipProps: keep props/select focus (font arrow browse) */
+function render(opts = {}) {
+  const canvas = $('canvas');
+  canvas.style.width = state.canvas.width + 'px';
+  canvas.style.height = state.canvas.height + 'px';
+  canvas.style.background = state.canvas.background || '#fff';
+  $('stage').style.transform = `scale(${state.zoom/100})`;
+  updateCanvasInfo();
   canvas.innerHTML = '';
   [...state.layers].sort((a,b)=>(a.z||0)-(b.z||0)).filter(layerVisible).forEach(layer => canvas.appendChild(renderLayer(layer)));
   if(state.showSafeGuides) canvas.appendChild(renderSafeGuides());
   // Mask ABOVE layers so overflow (incl. screen blend) is dimmed; hole = artboard
   canvas.appendChild(renderCanvasOverflowMask());
-  renderLayerList();
-  renderProps();
+  if(!opts.skipProps){
+    renderLayerList();
+    renderProps();
+  }
+}
+
+/** Replace one layer node on stage without rebuilding the props panel / font <select>. */
+function refreshLayerOnStage(layer){
+  if(!layer || !layerVisible(layer)) return;
+  const canvas = $('canvas');
+  const old = canvas?.querySelector(`.layer[data-id="${layer.id}"]`);
+  const next = renderLayer(layer);
+  if(old) old.replaceWith(next);
+  else {
+    // Insert in z-order before mask
+    const mask = canvas.querySelector('.canvasOverflowMask');
+    if(mask) canvas.insertBefore(next, mask);
+    else canvas.appendChild(next);
+  }
+  updateCanvasInfo();
 }
 function renderCanvasOverflowMask(){
   const mask = document.createElement('div');
@@ -243,28 +267,105 @@ function renderLayer(layer) {
   el.addEventListener('click', (ev) => { ev.stopPropagation(); if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(layer.id); else selectOnly(layer.id); render(); });
   return el;
 }
+function layersSortedTopFirst(){
+  return [...state.layers].sort((a,b)=>(b.z||0)-(a.z||0));
+}
+
+/** Reorder by list position (top of list = front = highest z). */
+function reorderLayerInList(fromId, toId, placeBefore){
+  if(!fromId || !toId || fromId === toId) return;
+  const order = layersSortedTopFirst().map(l => l.id);
+  const fromIdx = order.indexOf(fromId);
+  if(fromIdx < 0) return;
+  order.splice(fromIdx, 1);
+  let insertAt = order.indexOf(toId);
+  if(insertAt < 0) return;
+  if(!placeBefore) insertAt += 1;
+  order.splice(insertAt, 0, fromId);
+  pushHistory();
+  const n = order.length;
+  order.forEach((id, i)=>{
+    const layer = state.layers.find(x => x.id === id);
+    if(layer) layer.z = n - i;
+  });
+  markDirty();
+  render();
+}
+
+function clearLayerListDragMarks(box){
+  box?.querySelectorAll('.layerItem.dragOverBefore, .layerItem.dragOverAfter, .layerItem.dragging')
+    .forEach((el)=> el.classList.remove('dragOverBefore', 'dragOverAfter', 'dragging'));
+}
+
 function renderLayerList(){
-  const box=$('layersList'); box.innerHTML='';
-  [...state.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(l=>{
+  const box=$('layersList'); if(!box) return;
+  box.innerHTML='';
+  layersSortedTopFirst().forEach((l)=>{
     const row=document.createElement('div');
     row.className='layerItem'+(isSelected(l.id)?' active':'')+(!layerVisible(l)?' hiddenLayer':'')+(layerLocked(l)?' lockedLayer':'');
+    row.draggable = true;
+    row.dataset.id = l.id;
+
+    const grip=document.createElement('span');
+    grip.className='layerDrag';
+    grip.title='Trascina per cambiare ordine';
+    grip.textContent='⋮⋮';
+
     const eye=document.createElement('button');
     eye.type='button';
     eye.className='layerEye'+(layerVisible(l)?'':' off');
     eye.title=layerVisible(l)?'Nascondi layer':'Mostra layer';
     eye.textContent=layerVisible(l)?'◉':'○';
     eye.onclick=(ev)=>{ ev.stopPropagation(); toggleLayerVisible(l.id); };
+
     const lock=document.createElement('button');
     lock.type='button';
     lock.className='layerLock'+(layerLocked(l)?' on':'');
     lock.title=layerLocked(l)?'Sblocca layer':'Blocca layer';
     lock.textContent=layerLocked(l)?'🔒':'🔓';
     lock.onclick=(ev)=>{ ev.stopPropagation(); toggleLayerLocked(l.id); };
+
     const info=document.createElement('div');
     info.className='layerItemMain';
     info.innerHTML=`<span>${escapeHtml(l.name||l.type)}</span><small>${l.type} · z${l.z||0}</small>`;
     info.onclick=(ev)=>{ if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(l.id); else selectOnly(l.id); render(); };
-    row.append(eye, lock, info);
+
+    row.addEventListener('dragstart', (ev)=>{
+      if(ev.target.closest('button')){ ev.preventDefault(); return; }
+      ev.dataTransfer.setData('text/layer-id', l.id);
+      ev.dataTransfer.setData('text/plain', l.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+      state._dragLayerId = l.id;
+    });
+    row.addEventListener('dragend', ()=>{
+      clearLayerListDragMarks(box);
+      state._dragLayerId = null;
+    });
+    row.addEventListener('dragover', (ev)=>{
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      const rect = row.getBoundingClientRect();
+      const before = ev.clientY < rect.top + rect.height / 2;
+      row.classList.toggle('dragOverBefore', before);
+      row.classList.toggle('dragOverAfter', !before);
+      box.querySelectorAll('.layerItem').forEach((el)=>{
+        if(el !== row) el.classList.remove('dragOverBefore', 'dragOverAfter');
+      });
+    });
+    row.addEventListener('dragleave', (ev)=>{
+      if(!row.contains(ev.relatedTarget)) row.classList.remove('dragOverBefore', 'dragOverAfter');
+    });
+    row.addEventListener('drop', (ev)=>{
+      ev.preventDefault();
+      const fromId = ev.dataTransfer.getData('text/layer-id') || ev.dataTransfer.getData('text/plain') || state._dragLayerId;
+      const rect = row.getBoundingClientRect();
+      const placeBefore = ev.clientY < rect.top + rect.height / 2;
+      clearLayerListDragMarks(box);
+      reorderLayerInList(fromId, l.id, placeBefore);
+    });
+
+    row.append(grip, eye, lock, info);
     box.appendChild(row);
   });
 }
@@ -292,6 +393,7 @@ function renderProps(){
       ? 'Sorgente pesante (data URI). Preferisci un path tipo _assets/…'
       : 'Path relativo alla root campagne (es. _assets/fuoco/file.png).';
     syncKeyBlackProps(l);
+    syncImageAdjustProps(l);
   }
   if(l.type==='gradient') syncGradientProps(l);
   const fxBox = $('effectProps');
@@ -485,6 +587,76 @@ function endMarquee(){
 }
 function intersects(a,b){ return !(b.x > a.x+a.w || b.x+b.w < a.x || b.y > a.y+a.h || b.y+b.h < a.y); }
 
+let fontBrowseHistoryStarted = false;
+
+/** Live font preview while arrowing the <select> — keeps layer selection + select focus. */
+function applyFontFamilyLive(family){
+  const l = selected();
+  if(!l || l.type !== 'text') return;
+  const name = String(family || '').trim();
+  if(!name || (l.fontFamily || l.font) === name) {
+    updateFontAvailabilityHint(name);
+    return;
+  }
+  if(!fontBrowseHistoryStarted){
+    pushHistory();
+    fontBrowseHistoryStarted = true;
+  }
+  l.fontFamily = name;
+  markDirty();
+  refreshLayerOnStage(l);
+  updateFontAvailabilityHint(name);
+}
+
+function bindFontFamilyLiveBrowse(){
+  const sel = $('propFontFamily');
+  if(!sel || sel.dataset.liveBound) return;
+  sel.dataset.liveBound = '1';
+
+  const applyFromSelect = () => applyFontFamilyLive(sel.value);
+  const openList = ()=>{
+    sel.dataset.fontBrowse = '1';
+    // Inline listbox: arrows change value immediately (native popup often delays change)
+    const n = Math.min(16, Math.max(8, sel.options.length));
+    sel.size = n;
+    sel.classList.add('fontSelectOpen');
+  };
+  const closeList = ()=>{
+    sel.size = 1;
+    sel.classList.remove('fontSelectOpen');
+    sel.dataset.fontBrowse = '0';
+  };
+
+  sel.addEventListener('focus', ()=>{
+    fontBrowseHistoryStarted = false;
+    openList();
+  });
+  sel.addEventListener('blur', ()=>{
+    closeList();
+    fontBrowseHistoryStarted = false;
+    commitPropHistory();
+  });
+  sel.addEventListener('change', ()=>{
+    applyFromSelect();
+    waitForFont?.(sel.value)?.then(()=>render());
+  });
+  sel.addEventListener('input', ()=>{
+    applyFromSelect();
+    waitForFont?.(sel.value)?.then(()=>render());
+  });
+  sel.addEventListener('keydown', (ev)=>{
+    if(ev.key === 'Escape'){ sel.blur(); return; }
+    if(ev.key === 'Enter'){ sel.blur(); return; }
+    if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(ev.key)) return;
+    sel.dataset.fontBrowse = '1';
+    // After browser moves selectedIndex, paint the layer
+    requestAnimationFrame(()=> requestAnimationFrame(()=>{
+      applyFromSelect();
+      waitForFont?.(sel.value)?.then(()=>render());
+    }));
+  });
+}
+
 function bindProps(){
   const numeric=['X','Y','W','H','Z','Opacity','Rotation','FontSize','LineHeight','LetterSpacing','StrokeWidth','Radius'];
   numeric.forEach(k=>{
@@ -505,30 +677,7 @@ function bindProps(){
   });
   $('propText').oninput=()=>updateProp('text',$('propText').value);
   $('propFontWeight').onchange=()=>updateProp('fontWeight',$('propFontWeight').value);
-  $('propFontFamily').onchange=()=>{
-    updateProp('fontFamily',$('propFontFamily').value);
-    updateFontAvailabilityHint($('propFontFamily').value);
-  };
-  $('loadCustomFontBtn')?.addEventListener('click', async ()=>{
-    try{
-      const name = await loadCustomFont($('customFontName')?.value, $('customFontUrl')?.value);
-      populateFontSelect(name);
-      updateProp('fontFamily', name);
-      showToast('Font caricato: ' + name);
-    }catch(e){ alert('Font: ' + e.message); }
-  });
-  $('customFontFile')?.addEventListener('change', async (ev)=>{
-    const file = ev.target.files?.[0]; ev.target.value='';
-    if(!file) return;
-    const name = ($('customFontName')?.value || file.name.replace(/\.[^.]+$/, '')).trim();
-    const url = URL.createObjectURL(file);
-    try{
-      await loadCustomFont(name, url);
-      populateFontSelect(name);
-      updateProp('fontFamily', name);
-      showToast('Font locale: ' + name);
-    }catch(e){ alert('Font: ' + e.message); }
-  });
+  bindFontFamilyLiveBrowse();
   $('propTextTransform').onchange=()=>updateProp('textTransform',$('propTextTransform').value);
   $('propColor').oninput=()=>updateProp('color',$('propColor').value);
   $('propAlign').onchange=()=>updateProp('align',$('propAlign').value);
@@ -536,6 +685,15 @@ function bindProps(){
   $('propFill').oninput=()=>updateProp('fill',$('propFill').value);
   $('propStroke').oninput=()=>updateProp('stroke',$('propStroke').value);
   $('propFit').onchange=()=>updateProp('fit',$('propFit').value);
+  const applyImageAdjust = ()=>updateProp('adjust', readImageAdjustFromUi(), {history:false, debounce:true});
+  ['propBright','propContrast','propSaturate','propVivid'].forEach((id)=>{
+    $(id)?.addEventListener('input', applyImageAdjust);
+    $(id)?.addEventListener('change', applyImageAdjust);
+  });
+  $('propAdjustReset')?.addEventListener('click', ()=>{
+    updateProp('adjust', null);
+    syncImageAdjustProps({ adjust: null });
+  });
   $('propGradientType')?.addEventListener('change', ()=>updateProp('gradientType', $('propGradientType').value));
   $('propGradientAngle')?.addEventListener('input', ()=>updateProp('angle', Number($('propGradientAngle').value), {history:false, debounce:true}));
   ['propGradStopAColor','propGradStopAAlpha','propGradStopBColor','propGradStopBAlpha'].forEach((id)=>{
@@ -712,6 +870,14 @@ function loadLayoutObject(data, path=null, localName=null){
   clearDirty();
   syncCanvasInputs();
   render();
+  Promise.resolve(loadHostFonts?.())
+    .then(() => ensureLayoutCustomFonts?.(state.layers))
+    .then(() => {
+      const families = collectLayoutFontFamilies?.(state.layers) || [];
+      return Promise.all([...families].map((f) => waitForFont?.(f, 4000)));
+    })
+    .then(() => { populateFontSelect(); render(); })
+    .catch((error) => console.warn('Layout fonts failed', error));
 }
 async function fetchLayoutFromPath(path){
   if(path.startsWith('./')){
@@ -969,8 +1135,31 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
 async function loadReadyLayouts(){ await refreshLayoutLibrary(); }
 function downloadBlob(content, name, type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500); }
 
-function safeExportName(name){ return (name || 'layout').replace(/\.layout\.json$/,'').replace(/[^A-Za-z0-9._-]+/g,'_') + '.png'; }
-function canvasToBlob(canvas){ return new Promise(resolve=>canvas.toBlob(resolve, 'image/png')); }
+function exportMimeSettings(){
+  const mime = $('exportFormat')?.value || 'image/jpeg';
+  const q = Math.max(0.5, Math.min(0.98, (Number($('exportQuality')?.value) || 90) / 100));
+  const ext = mime === 'image/jpeg' ? 'jpg' : 'png';
+  return { mime, quality: mime === 'image/jpeg' ? q : undefined, ext };
+}
+function syncExportQualityUi(){
+  const wrap = $('exportQualityWrap');
+  const mime = $('exportFormat')?.value || 'image/jpeg';
+  if(wrap) wrap.hidden = mime !== 'image/jpeg';
+  const label = $('exportQualityLabel');
+  if(label) label.textContent = String($('exportQuality')?.value || 90);
+}
+function safeExportName(name, ext='png'){
+  const base = (name || 'layout').replace(/\.layout\.json$/i,'').replace(/\.(png|jpe?g)$/i,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+  return base + '.' + ext;
+}
+function formatBytes(n){
+  if(n < 1024) return n + ' B';
+  if(n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (n / (1024 * 1024)).toFixed(2) + ' MB';
+}
+function canvasToBlob(canvas, mime='image/png', quality){
+  return new Promise((resolve)=> canvas.toBlob(resolve, mime, quality));
+}
 function delay(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
 async function loadLayoutByPath(path){
   const res=await fetch('/api/load-layout?path=' + encodeURIComponent(path), {cache:'no-store'});
@@ -978,12 +1167,13 @@ async function loadLayoutByPath(path){
   if(!payload.ok) throw new Error(payload.error || 'Load failed');
   return payload.layout;
 }
-async function renderLayoutToBlob(layout){
+async function renderLayoutToBlob(layout, mime, quality){
   const w=layout.canvas?.width||1080, h=layout.canvas?.height||1350;
   const out=document.createElement('canvas'); out.width=w; out.height=h;
   const ctx=out.getContext('2d');
   await renderLayoutToCanvas(ctx, layout, w, h);
-  return canvasToBlob(out);
+  const settings = mime ? { mime, quality } : exportMimeSettings();
+  return canvasToBlob(out, settings.mime, settings.quality);
 }
 function downloadBlobObject(blob, name){
   const url=URL.createObjectURL(blob);
@@ -1006,9 +1196,10 @@ async function exportSelectedLayouts(){
     try{
       if(btn) btn.textContent=`Export ${i+1}/${selected.length}…`;
       const layout=await loadLayoutByPath(item.path);
-      const blob=await renderLayoutToBlob(layout);
-      if(!blob) throw new Error('PNG blob vuoto');
-      downloadBlobObject(blob, safeExportName(item.name));
+      const { mime, quality, ext } = exportMimeSettings();
+      const blob=await renderLayoutToBlob(layout, mime, quality);
+      if(!blob) throw new Error('Export blob vuoto');
+      downloadBlobObject(blob, safeExportName(item.name, ext));
       await delay(250);
     }catch(e){
       failures.push(`${item.name}: ${e.message}`);
@@ -1018,14 +1209,58 @@ async function exportSelectedLayouts(){
   if(failures.length) alert('Export completato con errori:\n' + failures.join('\n'));
 }
 async function exportPng(){
-  const out=document.createElement('canvas'); out.width=state.canvas.width; out.height=state.canvas.height; const ctx=out.getContext('2d');
+  const { mime, quality, ext } = exportMimeSettings();
+  const out=document.createElement('canvas'); out.width=state.canvas.width; out.height=state.canvas.height;
+  const ctx=out.getContext('2d');
+  // JPEG has no alpha: ensure opaque fill (renderLayoutToCanvas already paints canvas.background)
   await renderLayoutToCanvas(ctx, layoutPayload(), out.width, out.height);
-  const name = safeExportName(currentLayoutExportName());
-  out.toBlob(blob=>{
-    if(!blob) return;
-    downloadBlobObject(blob, name);
-    showToast('PNG esportato: ' + name);
-  }, 'image/png');
+  const name = safeExportName(currentLayoutExportName(), ext);
+  const blob = await canvasToBlob(out, mime, quality);
+  if(!blob){ alert('Export fallito'); return; }
+  downloadBlobObject(blob, name);
+  const ytHint = mime === 'image/jpeg' && blob.size > 2 * 1024 * 1024
+    ? ' — sopra 2 MB YouTube: abbassa la qualità'
+    : '';
+  showToast(`Export ${ext.toUpperCase()}: ${name} · ${formatBytes(blob.size)}${ytHint}`);
+}
+
+function refreshDuplicateFormatSelect(){
+  populateFormatSelect($('duplicateFormatSelect'), {
+    excludeWh: { w: state.canvas.width, h: state.canvas.height },
+  });
+}
+
+function duplicateLayoutToFormat(){
+  const raw = $('duplicateFormatSelect')?.value;
+  if(!raw || raw === 'custom'){ alert('Scegli un formato di destinazione'); return; }
+  const [tw, th] = raw.split('x').map(Number);
+  if(!tw || !th){ alert('Formato non valido'); return; }
+  if(tw === state.canvas.width && th === state.canvas.height){
+    showToast('Stesso formato del canvas attuale');
+    return;
+  }
+  if(!confirm(`Duplicare il layout in ${tw}×${th}?\nI livelli vengono riscalati in proporzione (punto di partenza da ritoccare).`)) return;
+  const scaled = scaleLayoutToFormat(layoutPayload(), tw, th);
+  pushHistory();
+  state.canvas = scaled.canvas;
+  state.layers = scaled.layers;
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.currentLayoutPath = null;
+  clearLocalFileHandle();
+  const base = (state.loadedJsonFilename || 'layout').replace(/\.layout\.json$/i, '').replace(/\.json$/i, '');
+  state.loadedJsonFilename = `${base}-${tw}x${th}.layout.json`;
+  markDirty();
+  syncCanvasInputs();
+  const presetSel = $('presetSelect');
+  if(presetSel){
+    const key = formatKey(tw, th);
+    if([...presetSel.options].some((o)=> o.value === key)) presetSel.value = key;
+    else presetSel.value = 'custom';
+  }
+  refreshDuplicateFormatSelect();
+  render();
+  showToast(`Duplicato in ${tw}×${th} — ritocca composizione a mano se serve`);
 }
 function drawRoundRect(ctx,x,y,w,h,r,fill,stroke,sw,layer){
   if(layer) applyCanvasShadow(ctx, layer.shadow);
@@ -1038,12 +1273,15 @@ function drawCanvasImage(ctx,l){
     const img=new Image();
     img.onload=()=>{
       const srcImg = (typeof processImageForKey === 'function') ? processImageForKey(img, l) : img;
-      // Bake fit/crop into an alpha canvas first, then draw with shadow (avoids clip boxing the blur).
+      // Bake fit/crop (+ color adjust) into alpha canvas, then draw with shadow.
       const off = document.createElement('canvas');
       off.width = Math.max(1, Math.round(l.w));
       off.height = Math.max(1, Math.round(l.h));
       const octx = off.getContext('2d');
+      const adjFilter = typeof imageAdjustFilterCss === 'function' ? imageAdjustFilterCss(l.adjust) : '';
+      octx.filter = adjFilter || 'none';
       drawImageFit(octx, srcImg, { ...l, x: 0, y: 0, w: off.width, h: off.height });
+      octx.filter = 'none';
       applyCanvasShadow(ctx, l.shadow);
       ctx.drawImage(off, l.x, l.y, l.w, l.h);
       clearCanvasShadow(ctx);
@@ -1055,7 +1293,8 @@ function drawCanvasImage(ctx,l){
 }
 
 async function exportLayoutToPngBase64(layout){
-  ensureCatalogGoogleFonts?.();
+  await loadHostFonts?.();
+  await ensureLayoutCustomFonts?.(layout.layers || []);
   const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
   await Promise.all([...families].map((f)=>waitForFont?.(f, 4000)));
   try { await document.fonts.ready; } catch(_){}
@@ -1086,6 +1325,12 @@ function syncCanvasInputs(){
   if(bg) bg.value = rgbToHex(state.canvas.background || '#ffffff');
   const guides=$('toggleSafeGuides');
   if(guides) guides.checked = !!state.showSafeGuides;
+  const presetSel = $('presetSelect');
+  if(presetSel && typeof formatKey === 'function'){
+    const key = formatKey(state.canvas.width, state.canvas.height);
+    presetSel.value = [...presetSel.options].some((o)=> o.value === key) ? key : 'custom';
+  }
+  if(typeof refreshDuplicateFormatSelect === 'function') refreshDuplicateFormatSelect();
 }
 function renderSafeGuides(){
   const inset = 48;
@@ -1249,7 +1494,19 @@ function init(){
   $('canvas').addEventListener('mousedown', startMarquee);
   $('canvas').addEventListener('contextmenu', (ev)=>{ if(ev.target.closest?.('.layer')) ev.preventDefault(); });
   $('canvas').addEventListener('click',(ev)=>{ if(ev.target===$('canvas')){state.selectedId=null; state.selectedIds=[]; render();} });
-  $('zoomRange').oninput=()=>{state.zoom=Number($('zoomRange').value); render();};
+  const syncZoomUi = ()=>{
+    const z = Math.round(Number(state.zoom) || 100);
+    const range = $('zoomRange');
+    if(range) range.value = z;
+    const label = $('zoomLabel');
+    if(label) label.textContent = z + '%';
+  };
+  $('zoomRange').oninput=()=>{
+    state.zoom = Number($('zoomRange').value);
+    syncZoomUi();
+    render({ skipProps: true });
+  };
+  syncZoomUi();
   $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addGradientBtn')?.addEventListener('click', ()=>{ pushHistory(); state.layers.push(defaultGradient()); selectOnly(state.layers.at(-1).id); markDirty(); render(); });
@@ -1261,6 +1518,10 @@ function init(){
   $('saveLayoutBtn').onclick=saveLayout;
   $('saveAsLayoutBtn').onclick=saveLayoutAs;
   $('exportPngBtn').onclick=exportPng;
+  $('exportFormat')?.addEventListener('change', syncExportQualityUi);
+  $('exportQuality')?.addEventListener('input', syncExportQualityUi);
+  syncExportQualityUi();
+  $('duplicateFormatBtn')?.addEventListener('click', duplicateLayoutToFormat);
   $('openLibraryBtn').onclick=openLayoutLibrary;
   $('closeLibraryBtn').onclick=closeLayoutLibrary;
   $('refreshLibraryBtn').onclick=()=>refreshLayoutLibrary().catch(e=>alert('Errore aggiornamento libreria: '+e.message));
@@ -1277,14 +1538,31 @@ function init(){
     pushHistory(); state.layers=state.layers.filter(x=>!isSelected(x.id)); state.selectedId=null; state.selectedIds=[]; markDirty(); render();
   };
   $('duplicateBtn').onclick=()=>{ const ls=selectedLayers(); if(!ls.length) return; pushHistory(); const copies=ls.map(l=>{ const c=JSON.parse(JSON.stringify(l)); c.id=uid(); c.name=(c.name||c.type)+' copy'; c.x+=24; c.y+=24; c.z=nextZ(); return c; }); state.layers.push(...copies); state.selectedIds=copies.map(c=>c.id); state.selectedId=state.selectedIds.at(-1); markDirty(); render(); };
+  populateFormatSelect($('presetSelect'), { includeCustom: true, selected: formatKey(state.canvas.width, state.canvas.height) });
+  refreshDuplicateFormatSelect();
   $('presetSelect').onchange=()=>{ const v=$('presetSelect').value; if(v!=='custom'){ const [w,h]=v.split('x').map(Number); $('canvasW').value=w; $('canvasH').value=h; }};
-  $('resizeCanvasBtn').onclick=()=>{ pushHistory(); state.canvas.width=Number($('canvasW').value); state.canvas.height=Number($('canvasH').value); markDirty(); render(); };
+  $('resizeCanvasBtn').onclick=()=>{
+    pushHistory();
+    state.canvas.width=Number($('canvasW').value);
+    state.canvas.height=Number($('canvasH').value);
+    markDirty();
+    refreshDuplicateFormatSelect();
+    render();
+  };
   $('canvasBg')?.addEventListener('input', ()=>{ pushHistory(); state.canvas.background = $('canvasBg').value; markDirty(); render(); });
   $('toggleSafeGuides')?.addEventListener('change', (ev)=>{ state.showSafeGuides = ev.target.checked; localStorage.setItem('robyShowSafeGuides', state.showSafeGuides ? '1' : '0'); render(); });
   $('reloadBtn').onclick=()=>reloadCurrentLayout();
   $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearLocalFileHandle(); clearDirty(); render(); }};
-  bindProps(); bindKeyboardShortcuts(); syncCanvasInputs(); populateFontSelect();
-  loadServerHealth().finally(()=>{ loadReadyLayouts(); render(); });
+  bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
+  loadServerHealth().finally(()=>{
+    loadReadyLayouts();
+    render();
+    ensureHostFontsInSelect?.().then(()=>{
+      const l = selected();
+      if(l?.type === 'text') populateFontSelect(l.fontFamily || l.font);
+      else populateFontSelect();
+    }).catch(()=>{});
+  });
 }
 if(!window.ROBY_EXPORT_MODE) init();
 else {

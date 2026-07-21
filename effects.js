@@ -60,7 +60,14 @@ function applyLayerEffectsDom(el, layer) {
     el.style.filter = '';
     return;
   }
-  if (layer.type === 'image' || layer.type === 'rect' || layer.type === 'gradient') {
+  if (layer.type === 'image') {
+    el.style.filter = typeof composeImageDomFilter === 'function'
+      ? composeImageDomFilter(layer)
+      : (shadowCss(layer.shadow) ? `drop-shadow(${shadowCss(layer.shadow)})` : '');
+    el.style.textShadow = '';
+    return;
+  }
+  if (layer.type === 'rect' || layer.type === 'gradient') {
     const s = shadowCss(layer.shadow);
     el.style.filter = s ? `drop-shadow(${s})` : '';
     el.style.textShadow = '';
