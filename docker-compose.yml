@@ -12,15 +12,13 @@ services:
       ROBY_LAYOUT_EDITOR_PORT: "8765"
       ROBY_LAYOUT_CAMPAIGNS_ROOT: "/campaigns"
       ROBY_LAYOUT_DOCKER: "1"
-      ROBY_LAYOUT_FONTS_ROOT: "/host-fonts/system:/host-fonts/library:/host-fonts/user"
+      # Docker File Sharing allows /Users (+ /Volumes) only — skip /System and /Library
+      ROBY_LAYOUT_FONTS_ROOT: "/host-fonts/user"
       PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright"
     shm_size: "512mb"
     volumes:
       - .:/app
       - ${ROBY_LAYOUT_CAMPAIGNS_HOST_PATH:-/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER}:/campaigns
-      # Mac Font Book → served to editor + Playwright via /api/fonts
-      - /System/Library/Fonts:/host-fonts/system:ro
-      - /Library/Fonts:/host-fonts/library:ro
       - ${HOME}/Library/Fonts:/host-fonts/user:ro
     healthcheck:
       test:

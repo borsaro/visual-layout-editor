@@ -18,13 +18,12 @@ def fonts_roots() -> list[Path]:
     if raw:
         roots = [Path(p).expanduser().resolve() for p in raw.split(':') if p.strip()]
     else:
-        # User fonts last so they override system duplicates when scanning last-wins
+        # Prefer shareable Mac paths. In Docker only ~/Library/Fonts is mountable
+        # (Docker Desktop File Sharing: /Users + /Volumes; not /System or /Library).
         roots = [
             Path('/System/Library/Fonts').resolve(),
             Path('/Library/Fonts').resolve(),
             (Path.home() / 'Library' / 'Fonts').resolve(),
-            Path('/host-fonts/system').resolve(),
-            Path('/host-fonts/library').resolve(),
             Path('/host-fonts/user').resolve(),
             Path('/host-fonts').resolve(),
         ]
