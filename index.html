@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260726-library-copypath" />
+  <link rel="stylesheet" href="./styles.css?v=20260726-fontsize-slider" />
 </head>
 <body>
   <header class="topbar">
@@ -125,7 +125,12 @@
         <div id="textProps">
           <label>Testo <textarea id="propText" rows="4"></textarea></label>
           <div class="grid2">
-            <label>Font size <input id="propFontSize" type="number"></label>
+            <label class="fontSizeControl">Font size
+              <span class="fontSizeRow">
+                <input id="propFontSize" type="number" min="8" max="400" step="1">
+                <input id="propFontSizeRange" type="range" min="8" max="400" step="1" value="48">
+              </span>
+            </label>
             <label>Peso
               <select id="propFontWeight">
                 <option value="100">100 Thin</option>
@@ -270,12 +275,13 @@
             <option value="all">Tutto</option>
           </select>
           <input id="librarySearch" placeholder="Cerca layout…" />
-          <label id="librarySelectAllWrap" class="selectAllControl" title="Seleziona o deseleziona tutti i layout visibili">
+          <label id="librarySelectAllWrap" class="selectAllControl" title="Seleziona o deseleziona tutti gli elementi visibili">
             <input id="librarySelectAllCheckbox" type="checkbox" />
             <span id="librarySelectAllText">Seleziona tutto</span>
           </label>
           <button id="libraryViewToggleBtn" title="Alterna vista lista / griglia">Vista griglia</button>
           <button id="bulkExportBtn" class="primary" disabled>Export selezionati</button>
+          <button id="bulkDeleteBtn" class="danger" disabled>Cancella selezionati</button>
           <button id="refreshLibraryBtn">Aggiorna</button>
           <button id="closeLibraryBtn">Chiudi</button>
         </div>
@@ -302,7 +308,7 @@
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
-  <script src="./app.js?v=20260726-library-arrows"></script>
-  <script src="./library.js?v=20260726-library-copypath"></script>
+  <script src="./app.js?v=20260726-deselect-outside"></script>
+  <script src="./library.js?v=20260726-library-toggle3"></script>
 </body>
 </html>

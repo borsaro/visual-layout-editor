@@ -12,6 +12,7 @@ ENDPOINTS = [
     {'method': 'POST', 'path': '/api/save-layout-as', 'desc': 'Save copy {path, filename, layout}'},
     {'method': 'POST', 'path': '/api/save-preview', 'desc': 'Save layout thumbnail JPEG {path, image_base64}'},
     {'method': 'POST', 'path': '/api/delete-layout', 'desc': 'Delete .layout.json {path}'},
+    {'method': 'POST', 'path': '/api/delete-library-items', 'desc': 'Delete layouts/images/folders {items:[{kind,path}]}'},
     {'method': 'POST', 'path': '/api/create-layout-from-image', 'desc': 'Create sidecar layout from image {path}'},
     {
         'method': 'POST',

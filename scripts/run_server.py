@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import socket
 import struct
 import sys
@@ -272,6 +273,40 @@ def image_meta(path: Path, light: bool = True):
     }
 
 
+def delete_library_target(kind: str, raw: str):
+    """Delete a layout, image, or campaign folder under CAMPAIGNS_ROOT."""
+    kind = (kind or '').strip().lower()
+    if kind == 'folder':
+        rel = clean_folder_rel(raw)
+        if not rel:
+            raise ValueError('Cannot delete campaigns root')
+        folder = resolve_campaign_folder(rel)
+        if folder.resolve() == CAMPAIGNS_ROOT.resolve():
+            raise ValueError('Cannot delete campaigns root')
+        if not under(folder, CAMPAIGNS_ROOT):
+            raise ValueError('Folder outside campaigns root')
+        if not folder.is_dir():
+            raise ValueError(f'Not a folder: {rel}')
+        shutil.rmtree(folder)
+        return {'kind': 'folder', 'deleted': rel}
+    if kind == 'layout':
+        from library_preview import preview_sidecar_path
+        target = resolve_allowed_layout(raw)
+        side = preview_sidecar_path(target)
+        target.unlink()
+        if side.exists():
+            try:
+                side.unlink()
+            except Exception:
+                pass
+        return {'kind': 'layout', 'deleted': public_path(target)}
+    if kind == 'image':
+        target = resolve_allowed_image(raw)
+        target.unlink()
+        return {'kind': 'image', 'deleted': public_path(target)}
+    raise ValueError(f'Unsupported delete kind: {kind}')
+
+
 def make_layout_from_image(path: Path):
     w, h = image_size(path)
     src = asset_src_for(path)
@@ -431,6 +466,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/save-layout',
             '/api/save-layout-as',
             '/api/delete-layout',
+            '/api/delete-library-items',
             '/api/create-layout-from-image',
             '/api/export',
             '/api/patch-layers',
@@ -441,6 +477,26 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
         try:
             length = int(self.headers.get('Content-Length', '0'))
             payload = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
+            if parsed.path == '/api/delete-library-items':
+                raw_items = payload.get('items') or []
+                if not isinstance(raw_items, list) or not raw_items:
+                    raise ValueError('Missing items[]')
+                deleted = []
+                errors = []
+                for entry in raw_items:
+                    if not isinstance(entry, dict):
+                        errors.append('invalid item')
+                        continue
+                    try:
+                        deleted.append(delete_library_target(entry.get('kind'), entry.get('path') or entry.get('rel') or ''))
+                    except Exception as e:
+                        errors.append(str(e))
+                self._json(200 if deleted and not errors else (207 if deleted else 400), {
+                    'ok': bool(deleted) and not errors,
+                    'deleted': deleted,
+                    'errors': errors,
+                })
+                return
             if parsed.path == '/api/save-preview':
                 from library_preview import preview_sidecar_path
                 target = resolve_allowed_layout(payload.get('path'))
@@ -545,15 +601,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
 
             current_path = resolve_allowed_layout(payload.get('path'))
             if parsed.path == '/api/delete-layout':
-                from library_preview import preview_sidecar_path
-                side = preview_sidecar_path(current_path)
-                current_path.unlink()
-                if side.exists():
-                    try:
-                        side.unlink()
-                    except Exception:
-                        pass
-                self._json(200, {'ok': True, 'deleted': public_path(current_path)})
+                result = delete_library_target('layout', payload.get('path'))
+                self._json(200, {'ok': True, **result})
                 return
             layout = payload.get('layout')
             if not isinstance(layout, dict):

@@ -85,7 +85,10 @@ async function refreshLayoutLibrary(){
 
   state.libraryItems = itemsPayload.items || [];
   state.libraryItemsReady = true;
-  const availablePaths = new Set(state.libraryItems.filter(x => x.kind === 'layout').map(x => x.path));
+  const availablePaths = new Set([
+    ...state.libraryFolders.map(f => f.path || f.rel),
+    ...state.libraryItems.map(x => x.path),
+  ].filter(Boolean));
   state.selectedLibraryPaths = state.selectedLibraryPaths.filter(path => availablePaths.has(path));
   if(meta){
     const layouts = state.libraryItems.filter(x => x.kind === 'layout').length;
@@ -170,43 +173,101 @@ function visibleLibraryItems(){
   return [...folders, ...items];
 }
 
+function isLibraryMultiSelectModifier(ev){
+  return !!(ev && (ev.shiftKey || ev.metaKey || ev.ctrlKey));
+}
+function librarySelectPath(item){
+  if(!item) return '';
+  if(item.kind === 'folder') return item.rel || item.path || item.name;
+  return item.path || item.rel || '';
+}
 function isLibrarySelected(path){ return state.selectedLibraryPaths.includes(path); }
 function setLibrarySelected(path, selected){
+  if(!path) return;
   if(selected){
     if(!state.selectedLibraryPaths.includes(path)) state.selectedLibraryPaths.push(path);
   } else {
     state.selectedLibraryPaths = state.selectedLibraryPaths.filter(x => x !== path);
   }
-  updateBulkExportButton();
+  updateBulkActionButtons();
 }
-function updateBulkExportButton(){
-  const btn = $('bulkExportBtn');
+function syncLibrarySelectionUi(path){
+  const selected = isLibrarySelected(path);
+  const grid = $('layoutGrid');
+  if(!grid) return;
+  [...grid.querySelectorAll('[data-path]')].forEach(el => {
+    if(el.dataset.path !== path) return;
+    el.classList.toggle('selectedForExport', selected);
+    const cb = el.querySelector('input[type="checkbox"]');
+    if(cb) cb.checked = selected;
+    const txt = el.querySelector('.librarySelectText');
+    if(txt) txt.textContent = selected ? 'Selezionato' : 'Seleziona';
+  });
+}
+function toggleLibrarySelectionByPath(path, key){
+  if(!path) return;
+  const next = !isLibrarySelected(path);
+  setLibrarySelected(path, next);
+  syncLibrarySelectionUi(path);
+  if(key) focusLibraryItem(key, { scroll: false });
+}
+function bindLibraryModifierSelect(){
+  const grid = $('layoutGrid');
+  if(!grid || grid.dataset.modifierSelectBound === '1') return;
+  grid.dataset.modifierSelectBound = '1';
+  // Capture-phase: one toggle only (avoids label/checkbox/row double-firing).
+  grid.addEventListener('click', (ev) => {
+    if(!isLibraryMultiSelectModifier(ev)) return;
+    if(ev.button != null && ev.button !== 0) return;
+    const row = ev.target.closest?.('.libraryRow, .layoutCard');
+    if(!row || !grid.contains(row)) return;
+    if(ev.target.closest?.('button')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if(typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    toggleLibrarySelectionByPath(row.dataset.path, row.dataset.libKey);
+  }, true);
+}
+function selectedLibraryEntries(){
+  const paths = new Set(state.selectedLibraryPaths);
+  const all = [...(state.libraryFolders || []), ...(state.libraryItems || [])];
+  return all.filter(it => paths.has(librarySelectPath(it)));
+}
+function updateBulkActionButtons(){
   const count = state.selectedLibraryPaths.length;
-  if(btn){
-    btn.disabled = count === 0;
-    btn.textContent = count ? `Export selezionati (${count})` : 'Export selezionati';
+  const exportBtn = $('bulkExportBtn');
+  if(exportBtn){
+    const layoutCount = selectedLibraryEntries().filter(it => it.kind === 'layout').length;
+    exportBtn.disabled = layoutCount === 0;
+    exportBtn.textContent = layoutCount ? `Export selezionati (${layoutCount})` : 'Export selezionati';
+  }
+  const delBtn = $('bulkDeleteBtn');
+  if(delBtn){
+    delBtn.disabled = count === 0;
+    delBtn.textContent = count ? `Cancella selezionati (${count})` : 'Cancella selezionati';
   }
   updateSelectAllControl();
 }
+function updateBulkExportButton(){ updateBulkActionButtons(); }
 function updateSelectAllControl(){
   const cb = $('librarySelectAllCheckbox');
   const txt = $('librarySelectAllText');
   if(!cb || !txt) return;
-  const visibleLayouts = visibleLibraryItems().filter(it => it.kind === 'layout');
-  const selectedVisible = visibleLayouts.filter(it => isLibrarySelected(it.path)).length;
-  cb.disabled = visibleLayouts.length === 0;
-  cb.indeterminate = selectedVisible > 0 && selectedVisible < visibleLayouts.length;
-  cb.checked = visibleLayouts.length > 0 && selectedVisible === visibleLayouts.length;
+  const visible = visibleLibraryItems().filter(it => librarySelectPath(it));
+  const selectedVisible = visible.filter(it => isLibrarySelected(librarySelectPath(it))).length;
+  cb.disabled = visible.length === 0;
+  cb.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+  cb.checked = visible.length > 0 && selectedVisible === visible.length;
   txt.textContent = cb.checked
-    ? `Deseleziona tutto (${visibleLayouts.length})`
-    : (selectedVisible ? `Selezionati ${selectedVisible}/${visibleLayouts.length}` : 'Seleziona tutto');
+    ? `Deseleziona tutto (${visible.length})`
+    : (selectedVisible ? `Selezionati ${selectedVisible}/${visible.length}` : 'Seleziona tutto');
 }
 function toggleVisibleLibrarySelection(forceChecked = null){
-  const visibleLayouts = visibleLibraryItems().filter(it => it.kind === 'layout');
-  if(!visibleLayouts.length) return;
-  const allSelected = visibleLayouts.every(it => isLibrarySelected(it.path));
+  const visible = visibleLibraryItems().filter(it => librarySelectPath(it));
+  if(!visible.length) return;
+  const allSelected = visible.every(it => isLibrarySelected(librarySelectPath(it)));
   const next = forceChecked === null ? !allSelected : !!forceChecked;
-  visibleLayouts.forEach(it => setLibrarySelected(it.path, next));
+  visible.forEach(it => setLibrarySelected(librarySelectPath(it), next));
   renderLibraryGrid();
 }
 
@@ -321,6 +382,11 @@ function updateLibrarySidePreview(item){
     openBtn.textContent = 'Apri cartella';
     openBtn.onclick = () => goLibraryFolder(item.rel || item.path || item.name);
     actions.appendChild(openBtn);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger';
+    delBtn.textContent = 'Cancella';
+    delBtn.onclick = () => deleteLibraryItem(item);
+    actions.appendChild(delBtn);
     return;
   }
 
@@ -334,33 +400,83 @@ function updateLibrarySidePreview(item){
   openBtn.textContent = item.kind === 'image' ? (item.has_layout ? 'Apri layout' : 'Crea layout') : 'Apri';
   openBtn.onclick = () => openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
   actions.appendChild(openBtn);
-  if(item.kind === 'layout'){
-    const delBtn = document.createElement('button');
-    delBtn.className = 'danger';
-    delBtn.textContent = 'Cancella';
-    delBtn.onclick = () => deleteLibraryLayout(item);
-    actions.appendChild(delBtn);
-  }
+  const delBtn = document.createElement('button');
+  delBtn.className = 'danger';
+  delBtn.textContent = 'Cancella';
+  delBtn.onclick = () => deleteLibraryItem(item);
+  actions.appendChild(delBtn);
   frame.innerHTML = '<div class="emptyGrid">Anteprima…</div>';
   loadPreviewInto(frame, item, { persist: true, expectKey: libraryItemKey(item) });
 }
 
-async function deleteLibraryLayout(item){
-  if(item.kind !== 'layout') return;
-  if(!confirm(`Cancellare definitivamente questo layout?\n\n${item.rel}`)) return;
-  const res = await fetch('/api/delete-layout', {
+function deleteConfirmLabel(item){
+  if(item.kind === 'folder') return `cartella progetto\n\n/${item.rel || item.path || item.name}\n\n(verrà eliminato tutto il contenuto)`;
+  if(item.kind === 'image') return `immagine\n\n${item.rel || item.path}`;
+  return `layout\n\n${item.rel || item.path}`;
+}
+
+async function deleteLibraryItem(item){
+  if(!item) return;
+  if(!confirm(`Cancellare definitivamente questo ${deleteConfirmLabel(item)}?`)) return;
+  const ok = await deleteLibraryItemsApi([{ kind: item.kind, path: librarySelectPath(item) }]);
+  if(ok) await refreshLayoutLibrary();
+}
+
+async function deleteSelectedLibraryItems(){
+  const selected = pruneNestedLibrarySelection(selectedLibraryEntries());
+  if(!selected.length){ alert('Seleziona almeno un file o una cartella.'); return; }
+  const folders = selected.filter(it => it.kind === 'folder').length;
+  const files = selected.length - folders;
+  const msg = [
+    `Cancellare definitivamente ${selected.length} elementi?`,
+    folders ? `· ${folders} cartelle progetto (con tutto il contenuto)` : '',
+    files ? `· ${files} file` : '',
+  ].filter(Boolean).join('\n');
+  if(!confirm(msg)) return;
+  const ok = await deleteLibraryItemsApi(selected.map(it => ({ kind: it.kind, path: librarySelectPath(it) })));
+  if(ok){
+    state.selectedLibraryPaths = [];
+    await refreshLayoutLibrary();
+  }
+}
+
+function pruneNestedLibrarySelection(selected){
+  const folderRels = selected.filter(it => it.kind === 'folder').map(it => librarySelectPath(it)).filter(Boolean);
+  return selected.filter(it => {
+    const path = librarySelectPath(it);
+    if(!path) return false;
+    if(it.kind === 'folder'){
+      return !folderRels.some(f => f !== path && path.startsWith(f + '/'));
+    }
+    return !folderRels.some(f => path === f || path.startsWith(f + '/'));
+  });
+}
+
+async function deleteLibraryItemsApi(items){
+  const res = await fetch('/api/delete-library-items', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: item.path }),
+    body: JSON.stringify({ items }),
   });
   const data = await res.json();
-  if(!data.ok){ alert('Errore cancellazione: ' + data.error); return; }
-  await refreshLayoutLibrary();
+  if(data.errors?.length){
+    alert('Cancellazione parziale o fallita:\n' + data.errors.join('\n'));
+  }
+  if(!data.deleted?.length){
+    if(!data.errors?.length) alert('Errore cancellazione: ' + (data.error || 'nessun elemento eliminato'));
+    return false;
+  }
+  showToast(`Eliminati ${data.deleted.length} elementi`);
+  return true;
 }
+
+async function deleteLibraryLayout(item){ return deleteLibraryItem(item); }
 
 function bindLibraryListScroll(){
   const grid = $('layoutGrid');
-  if(!grid || grid.dataset.scrollBound) return;
+  if(!grid) return;
+  bindLibraryModifierSelect();
+  if(grid.dataset.scrollBound) return;
   grid.dataset.scrollBound = '1';
   grid.addEventListener('scroll', () => {
     if(state.libraryViewMode !== 'list') return;
@@ -455,20 +571,21 @@ function renderLibraryGrid(){
 
 function buildLibraryRow(item){
   const key = libraryItemKey(item);
+  const selectPath = librarySelectPath(item);
   const row = document.createElement('div');
-  row.className = 'libraryRow' + (key === state.libraryFocusKey ? ' focused' : '') + (item.kind === 'folder' ? ' folderRow' : '') + (isLibrarySelected(item.path) ? ' selectedForExport' : '');
+  row.className = 'libraryRow' + (key === state.libraryFocusKey ? ' focused' : '') + (item.kind === 'folder' ? ' folderRow' : '') + (isLibrarySelected(selectPath) ? ' selectedForExport' : '');
   row.dataset.libKey = key;
-  if(item.path) row.dataset.path = item.path;
+  if(selectPath) row.dataset.path = selectPath;
 
   const check = document.createElement('label');
   check.className = 'libraryRowCheck';
+  check.title = item.kind === 'folder' ? 'Seleziona cartella' : 'Seleziona file';
   const cb = document.createElement('input');
   cb.type = 'checkbox';
-  cb.checked = item.kind === 'layout' && isLibrarySelected(item.path);
-  cb.disabled = item.kind !== 'layout';
+  cb.checked = isLibrarySelected(selectPath);
   cb.addEventListener('click', ev => ev.stopPropagation());
   cb.addEventListener('change', () => {
-    setLibrarySelected(item.path, cb.checked);
+    setLibrarySelected(selectPath, cb.checked);
     row.classList.toggle('selectedForExport', cb.checked);
   });
   check.appendChild(cb);
@@ -488,8 +605,12 @@ function buildLibraryRow(item){
   });
 
   row.append(check, title, openBtn);
-  row.onclick = () => focusLibraryItem(key, { scroll: false });
-  row.ondblclick = () => {
+  row.onclick = (ev) => {
+    if(isLibraryMultiSelectModifier(ev)) return;
+    focusLibraryItem(key, { scroll: false });
+  };
+  row.ondblclick = (ev) => {
+    if(isLibraryMultiSelectModifier(ev)) return;
     if(item.kind === 'folder') goLibraryFolder(item.rel || item.path || item.name);
     else openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
   };
@@ -497,13 +618,31 @@ function buildLibraryRow(item){
 }
 
 function buildLibraryCard(item){
+  const selectPath = librarySelectPath(item);
   if(item.kind === 'folder'){
     const card = document.createElement('div');
-    card.className = 'layoutCard folderCard';
+    card.className = 'layoutCard folderCard' + (isLibrarySelected(selectPath) ? ' selectedForExport' : '');
     card.dataset.libKey = libraryItemKey(item);
     const preview = document.createElement('div');
     preview.className = 'previewBox folderPreview';
     preview.innerHTML = '<div class="folderIcon">📁</div>';
+    const checkboxWrap = document.createElement('label');
+    checkboxWrap.className = 'librarySelect';
+    checkboxWrap.title = 'Seleziona cartella';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = isLibrarySelected(selectPath);
+    const checkboxText = document.createElement('span');
+    checkboxText.className = 'librarySelectText';
+    checkboxText.textContent = checkbox.checked ? 'Selezionato' : 'Seleziona';
+    checkbox.addEventListener('click', ev => ev.stopPropagation());
+    checkboxWrap.addEventListener('click', ev => ev.stopPropagation());
+    checkbox.addEventListener('change', () => {
+      setLibrarySelected(selectPath, checkbox.checked);
+      card.classList.toggle('selectedForExport', checkbox.checked);
+      checkboxText.textContent = checkbox.checked ? 'Selezionato' : 'Seleziona';
+    });
+    checkboxWrap.append(checkbox, checkboxText);
     const info = document.createElement('div');
     info.className = 'layoutInfo';
     info.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>Cartella progetto · ${escapeHtml(item.rel || item.name)}</small>`;
@@ -511,17 +650,27 @@ function buildLibraryCard(item){
     actions.className = 'layoutActions';
     const openBtn = document.createElement('button');
     openBtn.textContent = 'Apri cartella';
-    actions.append(openBtn);
-    card.append(preview, info, actions);
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Cancella';
+    delBtn.className = 'danger';
+    actions.append(openBtn, delBtn);
+    card.append(preview, checkboxWrap, info, actions);
     const openFolder = () => goLibraryFolder(item.rel || item.path || item.name);
-    preview.onclick = openFolder;
-    card.ondblclick = openFolder;
+    preview.onclick = (ev) => {
+      if(isLibraryMultiSelectModifier(ev)) return;
+      openFolder();
+    };
+    card.ondblclick = (ev) => {
+      if(isLibraryMultiSelectModifier(ev)) return;
+      openFolder();
+    };
     openBtn.onclick = openFolder;
+    delBtn.onclick = () => deleteLibraryItem(item);
     return card;
   }
 
   const card = document.createElement('div');
-  card.className = 'layoutCard' + (isLibrarySelected(item.path) ? ' selectedForExport' : '');
+  card.className = 'layoutCard' + (isLibrarySelected(selectPath) ? ' selectedForExport' : '');
   card.dataset.libKey = libraryItemKey(item);
   const preview = document.createElement('div');
   preview.className = 'previewBox';
@@ -533,17 +682,17 @@ function buildLibraryCard(item){
 
   const checkboxWrap = document.createElement('label');
   checkboxWrap.className = 'librarySelect';
+  checkboxWrap.title = 'Seleziona per export/cancellazione';
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
-  checkbox.checked = isLibrarySelected(item.path);
-  checkbox.disabled = item.kind !== 'layout';
+  checkbox.checked = isLibrarySelected(selectPath);
   const checkboxText = document.createElement('span');
   checkboxText.className = 'librarySelectText';
   checkboxText.textContent = checkbox.checked ? 'Selezionato' : 'Seleziona';
   checkbox.addEventListener('click', ev => ev.stopPropagation());
   checkboxWrap.addEventListener('click', ev => ev.stopPropagation());
   checkbox.addEventListener('change', ev => {
-    setLibrarySelected(item.path, ev.target.checked);
+    setLibrarySelected(selectPath, ev.target.checked);
     card.classList.toggle('selectedForExport', ev.target.checked);
     checkboxText.textContent = ev.target.checked ? 'Selezionato' : 'Seleziona';
   });
@@ -561,23 +710,19 @@ function buildLibraryCard(item){
   const delBtn = document.createElement('button');
   delBtn.textContent = 'Cancella';
   delBtn.className = 'danger';
-  if(item.kind !== 'layout'){ delBtn.disabled = true; delBtn.title = 'Solo .layout.json'; }
   actions.append(openBtn, delBtn);
   card.append(preview, checkboxWrap, info, actions);
 
   const open = () => openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
-  preview.onclick = () => {
-    if(item.kind === 'layout'){
-      const next = !isLibrarySelected(item.path);
-      checkbox.checked = next;
-      setLibrarySelected(item.path, next);
-      checkboxText.textContent = next ? 'Selezionato' : 'Seleziona';
-      card.classList.toggle('selectedForExport', next);
-    }
+  preview.onclick = (ev) => {
+    if(isLibraryMultiSelectModifier(ev)) return;
   };
-  card.ondblclick = open;
+  card.ondblclick = (ev) => {
+    if(isLibraryMultiSelectModifier(ev)) return;
+    open();
+  };
   openBtn.onclick = open;
-  delBtn.onclick = () => deleteLibraryLayout(item);
+  delBtn.onclick = () => deleteLibraryItem(item);
   return card;
 }
 

@@ -119,6 +119,15 @@ function undo(){ if(!state.history.length) return; const current=snapshot(); con
 function redo(){ if(!state.future.length) return; const current=snapshot(); const next=state.future.pop(); state.history.push(current); restoreSnapshot(next); }
 function selectOnly(id){ state.selectedId=id; state.selectedIds=id?[id]:[]; }
 function toggleSelect(id){ if(isSelected(id)){ state.selectedIds=state.selectedIds.filter(x=>x!==id); state.selectedId=state.selectedIds.at(-1)||null; } else { state.selectedIds.push(id); state.selectedId=id; } }
+function clearLayerSelection(){
+  if(!state.selectedId && !state.selectedIds.length) return;
+  state.selectedId = null;
+  state.selectedIds = [];
+  render();
+}
+function isSelectionModifier(ev){
+  return !!(ev && (ev.shiftKey || ev.metaKey || ev.ctrlKey));
+}
 
 function defaultText() {
   return {
@@ -465,6 +474,7 @@ function renderProps(){
     populateFontSelect(ff);
     setVal('propText', textL.text);
     setVal('propFontSize', textL.fontSize);
+    syncFontSizeRange(textL.fontSize);
     setVal('propFontWeight', textL.fontWeight || '400');
     setVal('propFontFamily', ff);
     setVal('propColor', textL.color || '#000000');
@@ -508,6 +518,14 @@ function renderProps(){
   if(textL) syncEffectInputs('propGlow', textL.glow, defaultGlow());
 }
 function setVal(id,v){ const el=$(id); if(el) el.value = v ?? ''; }
+function syncFontSizeRange(v){
+  const range = $('propFontSizeRange');
+  if(!range) return;
+  const n = Math.max(8, Math.min(400, Number(v) || 48));
+  if(Number(v) > 400) range.max = String(Math.ceil(Number(v)));
+  else if(Number(range.max) > 400 && n <= 400) range.max = '400';
+  range.value = String(n);
+}
 function beginPropHistory(){ if(!propHistoryPending){ pushHistory(); propHistoryPending = true; } }
 function commitPropHistory(){ propHistoryPending = false; if(propHistoryTimer){ clearTimeout(propHistoryTimer); propHistoryTimer = null; } }
 function updateProp(key, value, opts={}){
@@ -789,9 +807,22 @@ function bindProps(){
     const id='prop'+k; const el=$(id); if(!el) return;
     const key=k.charAt(0).toLowerCase()+k.slice(1);
     el.addEventListener('focus', beginPropHistory);
-    el.addEventListener('input',()=>updateProp(key, Number(el.value), {history:false, debounce:true}));
+    el.addEventListener('input',()=>{
+      if(key === 'fontSize') syncFontSizeRange(el.value);
+      updateProp(key, Number(el.value), {history:false, debounce:true});
+    });
     el.addEventListener('blur', commitPropHistory);
   });
+  const fontSizeRange = $('propFontSizeRange');
+  if(fontSizeRange){
+    fontSizeRange.addEventListener('pointerdown', beginPropHistory);
+    fontSizeRange.addEventListener('input', ()=>{
+      const n = Number(fontSizeRange.value);
+      setVal('propFontSize', n);
+      updateProp('fontSize', n, {history:false, debounce:true});
+    });
+    fontSizeRange.addEventListener('change', commitPropHistory);
+  }
   $('propName').oninput=()=>updateProp('name',$('propName').value);
   $('propVisible')?.addEventListener('change', ()=>updateProp('visible', $('propVisible').checked));
   $('propLocked')?.addEventListener('change', ()=>updateProp('locked', $('propLocked').checked));
@@ -1521,7 +1552,27 @@ function addImageByPath(){
 function init(){
   $('canvas').addEventListener('mousedown', startMarquee);
   $('canvas').addEventListener('contextmenu', (ev)=>{ if(ev.target.closest?.('.layer')) ev.preventDefault(); });
-  $('canvas').addEventListener('click',(ev)=>{ if(ev.target===$('canvas')){state.selectedId=null; state.selectedIds=[]; render();} });
+  $('canvas').addEventListener('click', (ev)=>{
+    if(ev.target !== $('canvas')) return;
+    if(isSelectionModifier(ev)) return;
+    clearLayerSelection();
+  });
+  $('stageScroller')?.addEventListener('mousedown', (ev)=>{
+    if(isSelectionModifier(ev)) return;
+    if(ev.target.closest?.('#canvas, .layer, .layerContextMenu')) return;
+    clearLayerSelection();
+  });
+  // Click outside the stage (panels/topbar empty chrome) also clears, unless editing a control or holding a modifier.
+  document.addEventListener('mousedown', (ev)=>{
+    if(isSelectionModifier(ev)) return;
+    if(!state.selectedIds.length && !state.selectedId) return;
+    const t = ev.target;
+    if(!(t instanceof Element)) return;
+    if(t.closest?.('#layoutLibraryModal, .modal, .layerContextMenu')) return;
+    if(t.closest?.('#canvas, .layer, .layers, #props, .propActions, .stageToolbar, .topbar, .actions, button, input, select, textarea, label, a')) return;
+    if(t.closest?.('.stageScroller')) return; // handled above (only empty scroller clears)
+    clearLayerSelection();
+  });
   const syncZoomUi = ()=>{
     const z = Math.round(Number(state.zoom) || 100);
     const range = $('zoomRange');
@@ -1555,6 +1606,7 @@ function init(){
   $('refreshLibraryBtn').onclick=()=>refreshLayoutLibrary().catch(e=>alert('Errore aggiornamento libreria: '+e.message));
   $('libraryViewToggleBtn')?.addEventListener('click', ()=>setLibraryViewMode(state.libraryViewMode === 'list' ? 'grid' : 'list'));
   $('bulkExportBtn').onclick=exportSelectedLayouts;
+  $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
   $('librarySearch').oninput=renderLibraryGrid;
   $('libraryKindFilter').onchange=renderLibraryGrid;
