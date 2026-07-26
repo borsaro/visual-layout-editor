@@ -299,7 +299,6 @@ function renderLayer(layer) {
     });
   }
   el.addEventListener('mousedown', (ev) => startDrag(ev, layer.id, ev.target?.dataset?.handle || null));
-  el.addEventListener('click', (ev) => { ev.stopPropagation(); if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(layer.id); else selectOnly(layer.id); render(); });
   return el;
 }
 function layersSortedTopFirst(){
@@ -597,9 +596,14 @@ function groupBox(layers){
 function startDrag(ev, id, handle=null){
   ev.preventDefault(); ev.stopPropagation();
   const target = state.layers.find(l => l.id === id);
+  if(!handle && isSelectionModifier(ev)){
+    toggleSelect(id);
+    render();
+    return;
+  }
   if(layerLocked(target)){
     if(!isSelected(id)){
-      if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(id); else selectOnly(id);
+      selectOnly(id);
       render();
     }
     return;
@@ -612,9 +616,7 @@ function startDrag(ev, id, handle=null){
   // Ctrl/Cmd crop must always operate on a single image layer.
   if(resizing){
     if(cropMode || !isSelected(id)) selectOnly(id);
-  } else if(!isSelected(id)){
-    if(ev.shiftKey || ev.metaKey || ev.ctrlKey) toggleSelect(id); else selectOnly(id);
-  }
+  } else if(!isSelected(id)) selectOnly(id);
   const layers=selectedLayers().filter(l => !layerLocked(l));
   if(!layers.length){ render(); return; }
   pushHistory();
@@ -828,7 +830,7 @@ function bindProps(){
   $('propLocked')?.addEventListener('change', ()=>updateProp('locked', $('propLocked').checked));
   $('propBlendMode')?.addEventListener('change', ()=>updateProp('blendMode', normalizeBlendMode($('propBlendMode').value)));
   const applyKeyBlack = ()=>updateProp('keyBlack', readKeyBlackFromUi(), {debounce:true});
-  ['propKeyBlackEnabled','propKeyThreshold','propKeySoftness'].forEach((id)=>{
+  ['propKeyBlackEnabled','propKeyColor','propKeyThreshold','propKeySoftness'].forEach((id)=>{
     $(id)?.addEventListener('change', applyKeyBlack);
     $(id)?.addEventListener('input', applyKeyBlack);
   });
@@ -1557,7 +1559,7 @@ function init(){
     if(isSelectionModifier(ev)) return;
     clearLayerSelection();
   });
-  $('stageScroller')?.addEventListener('mousedown', (ev)=>{
+  document.querySelector('.stageScroller')?.addEventListener('mousedown', (ev)=>{
     if(isSelectionModifier(ev)) return;
     if(ev.target.closest?.('#canvas, .layer, .layerContextMenu')) return;
     clearLayerSelection();

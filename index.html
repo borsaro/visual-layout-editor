@@ -225,8 +225,9 @@
           </div>
           <button type="button" id="propAdjustReset" class="wide">Reset colore</button>
           <p class="muted hint">0 = neutro. Vivid alza saturazione + contrasto.</p>
-          <h3 class="propSubhead">Key nero</h3>
-          <label class="toggleRow"><input id="propKeyBlackEnabled" type="checkbox"> Rimuovi nero (luminanza→alpha)</label>
+          <h3 class="propSubhead">Key colore</h3>
+          <label class="toggleRow"><input id="propKeyBlackEnabled" type="checkbox"> Rimuovi colore (distanza→alpha)</label>
+          <label>Colore key <input id="propKeyColor" type="color" value="#000000"></label>
           <div class="grid2">
             <label>Soglia <input id="propKeyThreshold" type="number" min="0" max="255" step="1" value="16"></label>
             <label>Morbidezza <input id="propKeySoftness" type="number" min="0" max="255" step="1" value="40"></label>
@@ -304,11 +305,11 @@
   <script src="./effects.js?v=20260719-adjust"></script>
   <script src="./asset-src.js?v=20260719-assets"></script>
   <script src="./gradient.js?v=20260719-gradient"></script>
-  <script src="./image-process.js?v=20260719-key"></script>
+  <script src="./image-process.js?v=20260726-color-key"></script>
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
-  <script src="./app.js?v=20260726-deselect-outside"></script>
+  <script src="./app.js?v=20260726-color-key"></script>
   <script src="./library.js?v=20260726-library-toggle3"></script>
 </body>
 </html>

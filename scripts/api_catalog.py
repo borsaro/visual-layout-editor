@@ -45,7 +45,7 @@ LAYER_FIELDS_FOR_AGENTS = {
     },
     'shadow': {'type': 'object', 'desc': '{enabled,color,blur,offsetX,offsetY,opacity}'},
     'glow': {'type': 'object', 'desc': 'Text only: {enabled,color,blur,opacity}'},
-    'keyBlack': {'type': 'object', 'desc': 'Image black key: {enabled,threshold,softness}'},
+    'keyBlack': {'type': 'object', 'desc': 'Image color key: {enabled,color,threshold,softness}'},
 }
 
 
