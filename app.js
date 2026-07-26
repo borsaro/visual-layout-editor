@@ -64,6 +64,27 @@ function showToast(msg){
   clearTimeout(showToast._tm);
   showToast._tm = setTimeout(() => t.classList.remove('show'), 2600);
 }
+
+/** Clipboard: async API when available, execCommand fallback for HTTP LAN (non-secure). */
+async function copyTextToClipboard(text){
+  const value = String(text ?? '');
+  if(!value) throw new Error('testo vuoto');
+  if(navigator.clipboard?.writeText && window.isSecureContext){
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = value;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, value.length);
+  const ok = document.execCommand('copy');
+  ta.remove();
+  if(!ok) throw new Error('execCommand copy failed');
+}
 function currentLayoutExportName(){
   if(state.currentLayoutPath) return state.currentLayoutPath.split('/').pop();
   return state.loadedJsonFilename || 'layout.layout.json';
@@ -843,10 +864,10 @@ function bindProps(){
     if(!l || l.type !== 'text') return;
     const text = fontInfoString(l);
     try{
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
       showToast('Copiato: ' + text);
     }catch(e){
-      showToast('Copia fallita');
+      showToast('Copia fallita: ' + (e.message || e));
     }
   });
 }
@@ -1535,13 +1556,16 @@ function layoutFileRef(){
   return '(nessun file aperto)';
 }
 
+/** Exact layer objects from current layout state (same as layers[] in the .layout.json). */
 function buildLlmLayerClipboard(layers){
   const list = (layers || []).map((l) => JSON.parse(JSON.stringify(l)));
   const body = list.length === 1
     ? JSON.stringify(list[0], null, 2)
     : JSON.stringify(list, null, 2);
+  const canvas = state.canvas || {};
   return [
     `## Layer selezionati (${list.length})`,
+    `canvas: ${canvas.width || '?'}x${canvas.height || '?'}`,
     '```json',
     body,
     '```',
@@ -1558,10 +1582,11 @@ async function copySelectedLayersCode(){
   }
   const text = buildLlmLayerClipboard(layers);
   try{
-    await navigator.clipboard.writeText(text);
-    showToast(`Codice copiato (${layers.length} layer)`);
+    await copyTextToClipboard(text);
+    showToast(`Codice copiato (${layers.length} layer) → ${layoutFileRef()}`);
   }catch(e){
-    showToast('Copia codice fallita');
+    console.warn('copySelectedLayersCode', e, text.slice(0, 200));
+    showToast('Copia codice fallita: ' + (e.message || e));
   }
 }
 
@@ -1579,11 +1604,14 @@ function ensureLayerContextMenu(){
   menu.hidden = true;
   menu.innerHTML = '<button type="button" data-action="copy-code">Copia codice</button>';
   document.body.appendChild(menu);
-  menu.addEventListener('mousedown', (ev) => ev.stopPropagation());
-  menu.addEventListener('click', async (ev) => {
-    const action = ev.target?.closest?.('[data-action]')?.dataset?.action;
+  // pointerdown: evita che il capture mousedown sul document nasconda il menu prima del click
+  menu.addEventListener('pointerdown', async (ev) => {
+    const btn = ev.target?.closest?.('[data-action="copy-code"]');
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
     hideLayerContextMenu();
-    if(action === 'copy-code') await copySelectedLayersCode();
+    await copySelectedLayersCode();
   });
   return menu;
 }
