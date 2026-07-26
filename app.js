@@ -445,6 +445,8 @@ function renderProps(){
   const primary = selected() || sel[0] || null;
   $('emptyProps').hidden = !!sel.length;
   $('props').hidden = !sel.length;
+  const context = document.querySelector('.inspectorContext');
+  if(context) context.textContent = sel.length > 1 ? `${sel.length} layer` : (primary?.type || 'Inspector');
   if(!sel.length || !primary) return;
 
   const has = (t) => sel.some((l) => l.type === t);
@@ -466,6 +468,7 @@ function renderProps(){
   $('boxProps').hidden = !has('rect');
   $('imageProps').hidden = !has('image');
   const gradProps = $('gradientProps'); if(gradProps) gradProps.hidden = !has('gradient');
+  const alignObjects = $('alignObjectsProps'); if(alignObjects) alignObjects.hidden = sel.length < 2;
 
   const textL = repr('text');
   if(textL){
@@ -516,7 +519,13 @@ function renderProps(){
   syncEffectInputs('propShadow', shadowSrc.shadow, defaultShadow());
   if(textL) syncEffectInputs('propGlow', textL.glow, defaultGlow());
 }
-function setVal(id,v){ const el=$(id); if(el) el.value = v ?? ''; }
+function setVal(id,v){
+  const el=$(id);
+  if(!el) return;
+  el.value = v ?? '';
+  el._syncQuickRange?.();
+  el._syncSegmented?.();
+}
 function syncFontSizeRange(v){
   const range = $('propFontSizeRange');
   if(!range) return;
@@ -555,6 +564,7 @@ function syncTextStyleToggles(layer){
     const key = btn.dataset.styleToggle;
     const on = key === 'italic' ? layer.fontStyle === 'italic' : !!layer[key];
     btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
 }
 
@@ -1636,6 +1646,7 @@ function init(){
   $('toggleSafeGuides')?.addEventListener('change', (ev)=>{ state.showSafeGuides = ev.target.checked; localStorage.setItem('robyShowSafeGuides', state.showSafeGuides ? '1' : '0'); render(); });
   $('reloadBtn').onclick=()=>reloadCurrentLayout();
   $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearLocalFileHandle(); clearDirty(); render(); }};
+  initInspectorControls?.();
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
   loadServerHealth().finally(()=>{
     render();

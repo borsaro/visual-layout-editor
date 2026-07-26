@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
   <link rel="stylesheet" href="./styles.css?v=20260726-fontsize-slider" />
+  <link rel="stylesheet" href="./inspector.css?v=20260726-inspector-ui-2" />
 </head>
 <body>
   <header class="topbar">
@@ -40,7 +41,7 @@
     <aside class="panel left">
       <h2>Canvas</h2>
       <div class="row">
-        <label>Preset</label>
+        <label for="presetSelect">Preset</label>
         <select id="presetSelect"></select>
       </div>
       <div class="grid2">
@@ -80,27 +81,39 @@
     </section>
 
     <aside class="panel right">
-      <h2>Proprietà</h2>
-      <div id="emptyProps" class="muted">Seleziona un layer.</div>
+      <div class="inspectorHeader">
+        <h2>Proprietà</h2>
+        <span class="inspectorContext">Inspector</span>
+      </div>
+      <div id="emptyProps" class="inspectorEmpty">Seleziona un layer per modificarlo.</div>
       <div id="props" hidden>
-        <label>Nome <input id="propName"></label>
-        <label class="toggleRow"><input id="propVisible" type="checkbox" checked> Layer visibile</label>
-        <label class="toggleRow"><input id="propLocked" type="checkbox"> Layer bloccato</label>
-        <div class="grid2">
-          <label>X <input id="propX" type="number"></label>
-          <label>Y <input id="propY" type="number"></label>
-          <label>W <input id="propW" type="number"></label>
-          <label>H <input id="propH" type="number"></label>
-        </div>
-        <div class="grid2">
-          <label>Z <input id="propZ" type="number"></label>
+        <section id="selectionProps" class="inspectorSection">
+          <div class="inspectorSectionTitle"><span>Layer</span></div>
+          <label>Nome <input id="propName"></label>
+          <div class="layerStateRow">
+            <label class="toggleRow"><input id="propVisible" type="checkbox" checked> Visibile</label>
+            <label class="toggleRow"><input id="propLocked" type="checkbox"> Bloccato</label>
+          </div>
+        </section>
+        <section id="transformProps" class="inspectorSection">
+          <div class="inspectorSectionTitle"><span>Trasforma</span></div>
+          <div class="grid2 compactGrid">
+            <label>X <input id="propX" type="number"></label>
+            <label>Y <input id="propY" type="number"></label>
+            <label>W <input id="propW" type="number" min="1"></label>
+            <label>H <input id="propH" type="number" min="1"></label>
+          </div>
+          <div class="grid2 compactGrid">
+            <label>Ordine Z <input id="propZ" type="number"></label>
+            <label>Rotazione ° <input id="propRotation" type="number" step="1" value="0"></label>
+          </div>
           <label>Opacità <input id="propOpacity" type="number" min="0" max="1" step="0.05"></label>
-        </div>
-        <label>Rotazione ° <input id="propRotation" type="number" step="1" value="0"></label>
-        <label>Fusione
-          <select id="propBlendMode"></select>
-        </label>
-        <div id="effectProps">
+          <label>Fusione
+            <select id="propBlendMode"></select>
+          </label>
+        </section>
+        <section id="effectProps" class="inspectorSection collapsible isCollapsed">
+          <div class="inspectorSectionTitle"><span>Effetti</span></div>
           <h3 class="propSubhead">Ombra</h3>
           <label class="toggleRow"><input id="propShadowEnabled" type="checkbox"> Ombra attiva</label>
           <div class="grid2">
@@ -121,14 +134,15 @@
             </div>
             <label>Raggio <input id="propGlowBlur" type="number" min="0" step="1" value="18"></label>
           </div>
-        </div>
-        <div id="textProps">
+        </section>
+        <section id="textProps" class="inspectorSection">
+          <div class="inspectorSectionTitle"><span>Tipografia</span></div>
           <label>Testo <textarea id="propText" rows="4"></textarea></label>
           <div class="grid2">
-            <label class="fontSizeControl">Font size
+            <label class="fontSizeControl">Dimensione
               <span class="fontSizeRow">
                 <input id="propFontSize" type="number" min="8" max="400" step="1">
-                <input id="propFontSizeRange" type="range" min="8" max="400" step="1" value="48">
+                <input id="propFontSizeRange" type="range" min="8" max="400" step="1" value="48" aria-label="Dimensione font">
               </span>
             </label>
             <label>Peso
@@ -154,9 +168,9 @@
           <p class="muted hint">Frecce ↑↓ sul menu: anteprima live senza perdere la selezione.</p>
           <p id="fontAvailabilityHint" class="muted hint"></p>
           <div class="styleToggles" id="textStyleToggles">
-            <button type="button" data-style-toggle="italic" title="Corsivo" class="styleToggle italic">I</button>
-            <button type="button" data-style-toggle="underline" title="Sottolineato" class="styleToggle underline">U</button>
-            <button type="button" data-style-toggle="strikethrough" title="Barrato" class="styleToggle strike">S</button>
+            <button type="button" data-style-toggle="italic" title="Corsivo" aria-label="Corsivo" aria-pressed="false" class="styleToggle italic">I</button>
+            <button type="button" data-style-toggle="underline" title="Sottolineato" aria-label="Sottolineato" aria-pressed="false" class="styleToggle underline">U</button>
+            <button type="button" data-style-toggle="strikethrough" title="Barrato" aria-label="Barrato" aria-pressed="false" class="styleToggle strike">S</button>
           </div>
           <div class="grid2">
             <label>Trasforma
@@ -168,7 +182,7 @@
                 <option value="lowercase">minuscolo</option>
               </select>
             </label>
-            <label>Letter spacing <input id="propLetterSpacing" type="number" step="0.5" value="0"></label>
+            <label>Spaziatura <input id="propLetterSpacing" type="number" step="0.5" value="0"></label>
           </div>
           <p class="muted hint">Font dal Mac Font Book (montati in Docker). Valori dal JSON assenti sul Mac compaiono come “(dal layout)”.</p>
           <div class="grid2">
@@ -177,20 +191,22 @@
           </div>
           <div class="grid2">
             <label>Allinea V <select id="propVAlign"><option value="top">top</option><option value="middle">middle</option><option value="bottom">bottom</option></select></label>
-            <label>Line height <input id="propLineHeight" type="number" step="0.05"></label>
+            <label>Interlinea <input id="propLineHeight" type="number" step="0.05"></label>
           </div>
-        </div>
-        <div id="boxProps">
+        </section>
+        <section id="boxProps" class="inspectorSection">
+          <div class="inspectorSectionTitle"><span>Forma</span></div>
           <div class="grid2">
-            <label>Fill <input id="propFill" type="color"></label>
+            <label>Riempimento <input id="propFill" type="color"></label>
             <label>Bordo <input id="propStroke" type="color"></label>
           </div>
           <div class="grid2">
-            <label>Stroke W <input id="propStrokeWidth" type="number"></label>
-            <label>Radius <input id="propRadius" type="number"></label>
+            <label>Bordo px <input id="propStrokeWidth" type="number"></label>
+            <label>Raggio <input id="propRadius" type="number"></label>
           </div>
-        </div>
-        <div id="gradientProps" hidden>
+        </section>
+        <section id="gradientProps" class="inspectorSection" hidden>
+          <div class="inspectorSectionTitle"><span>Gradiente</span></div>
           <label>Tipo
             <select id="propGradientType">
               <option value="linear">Lineare</option>
@@ -206,9 +222,10 @@
             <label>Stop B <input id="propGradStopBColor" type="color" value="#000000"></label>
             <label>Alpha B <input id="propGradStopBAlpha" type="number" min="0" max="1" step="0.05" value="0.72"></label>
           </div>
-        </div>
-        <div id="imageProps">
-          <label>Fit <select id="propFit"><option>contain</option><option>cover</option><option>stretch</option></select></label>
+        </section>
+        <section id="imageProps" class="inspectorSection">
+          <div class="inspectorSectionTitle"><span>Immagine</span></div>
+          <label>Adattamento <select id="propFit"><option value="contain">Contieni</option><option value="cover">Copri</option><option value="stretch">Adatta</option></select></label>
           <label>Sorgente (path)
             <input id="propImageSrc" placeholder="_assets/fuoco/file.png">
           </label>
@@ -216,12 +233,12 @@
           <p id="imageSrcHint" class="muted hint">Path relativo alla root campagne (es. _assets/fuoco/file.png).</p>
           <h3 class="propSubhead">Colore immagine</h3>
           <div class="grid2">
-            <label>Bright <input id="propBright" type="number" min="-100" max="100" step="1" value="0"></label>
-            <label>Contrast <input id="propContrast" type="number" min="-100" max="100" step="1" value="0"></label>
+            <label>Luminosità <input id="propBright" type="number" min="-100" max="100" step="1" value="0"></label>
+            <label>Contrasto <input id="propContrast" type="number" min="-100" max="100" step="1" value="0"></label>
           </div>
           <div class="grid2">
-            <label>Saturate <input id="propSaturate" type="number" min="-100" max="100" step="1" value="0"></label>
-            <label>Vivid <input id="propVivid" type="number" min="0" max="100" step="1" value="0"></label>
+            <label>Saturazione <input id="propSaturate" type="number" min="-100" max="100" step="1" value="0"></label>
+            <label>Vividezza <input id="propVivid" type="number" min="0" max="100" step="1" value="0"></label>
           </div>
           <button type="button" id="propAdjustReset" class="wide">Reset colore</button>
           <p class="muted hint">0 = neutro. Vivid alza saturazione + contrasto.</p>
@@ -233,27 +250,31 @@
             <label>Morbidezza <input id="propKeySoftness" type="number" min="0" max="255" step="1" value="40"></label>
           </div>
           <p class="muted hint">Maniglie: Shift = resize libero · Ctrl/Cmd = crop immagine</p>
-        </div>
-        <h2>Allinea al canvas</h2>
-        <div class="alignActions">
-          <button data-canvas-align="left">Sinistra</button>
-          <button data-canvas-align="hcenter">Centro H</button>
-          <button data-canvas-align="right">Destra</button>
-          <button data-canvas-align="top">Alto</button>
-          <button data-canvas-align="vcenter">Centro V</button>
-          <button data-canvas-align="bottom">Basso</button>
-        </div>
-        <h2>Allinea oggetti</h2>
-        <div class="alignActions">
-          <button data-align-action="left">Sinistra</button>
-          <button data-align-action="hcenter">Centro H</button>
-          <button data-align-action="right">Destra</button>
-          <button data-align-action="top">Alto</button>
-          <button data-align-action="vcenter">Centro V</button>
-          <button data-align-action="bottom">Basso</button>
-          <button data-align-action="distributeH">Distribuisci H</button>
-          <button data-align-action="distributeV">Distribuisci V</button>
-        </div>
+        </section>
+        <section id="alignCanvasProps" class="inspectorSection arrangeSection collapsible">
+          <div class="inspectorSectionTitle"><span>Allinea al canvas</span></div>
+          <div class="alignActions iconActions">
+            <button data-canvas-align="left">Sinistra</button>
+            <button data-canvas-align="hcenter">Centro H</button>
+            <button data-canvas-align="right">Destra</button>
+            <button data-canvas-align="top">Alto</button>
+            <button data-canvas-align="vcenter">Centro V</button>
+            <button data-canvas-align="bottom">Basso</button>
+          </div>
+        </section>
+        <section id="alignObjectsProps" class="inspectorSection arrangeSection collapsible isCollapsed">
+          <div class="inspectorSectionTitle"><span>Allinea oggetti</span></div>
+          <div class="alignActions iconActions">
+            <button data-align-action="left">Sinistra</button>
+            <button data-align-action="hcenter">Centro H</button>
+            <button data-align-action="right">Destra</button>
+            <button data-align-action="top">Alto</button>
+            <button data-align-action="vcenter">Centro V</button>
+            <button data-align-action="bottom">Basso</button>
+            <button data-align-action="distributeH">Distribuisci H</button>
+            <button data-align-action="distributeV">Distribuisci V</button>
+          </div>
+        </section>
         <div class="propActions">
           <button id="duplicateBtn">Duplica</button>
           <button id="deleteBtn" class="danger">Elimina</button>
@@ -309,7 +330,8 @@
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
-  <script src="./app.js?v=20260726-color-key"></script>
+  <script src="./inspector-controls.js?v=20260726-inspector-ui-2"></script>
+  <script src="./app.js?v=20260726-inspector-ui-2"></script>
   <script src="./library.js?v=20260726-library-toggle3"></script>
 </body>
 </html>
