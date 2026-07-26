@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260721-xy-copycode" />
+  <link rel="stylesheet" href="./styles.css?v=20260726-library-copypath" />
 </head>
 <body>
   <header class="topbar">
@@ -274,13 +274,21 @@
             <input id="librarySelectAllCheckbox" type="checkbox" />
             <span id="librarySelectAllText">Seleziona tutto</span>
           </label>
+          <button id="libraryViewToggleBtn" title="Alterna vista lista / griglia">Vista griglia</button>
           <button id="bulkExportBtn" class="primary" disabled>Export selezionati</button>
           <button id="refreshLibraryBtn">Aggiorna</button>
           <button id="closeLibraryBtn">Chiudi</button>
         </div>
       </div>
       <div id="libraryBreadcrumb" class="libraryBreadcrumb"></div>
-      <div id="layoutGrid" class="layoutGrid"></div>
+      <div id="libraryWorkspace" class="libraryWorkspace">
+        <div id="layoutGrid" class="layoutGrid libraryList"></div>
+        <aside id="librarySidePreview" class="librarySidePreview">
+          <div id="librarySidePreviewFrame" class="librarySidePreviewFrame"><div class="emptyGrid">Seleziona un elemento</div></div>
+          <div id="librarySidePreviewMeta" class="librarySidePreviewMeta"></div>
+          <div id="librarySidePreviewActions" class="librarySidePreviewActions"></div>
+        </aside>
+      </div>
     </div>
   </div>
 
@@ -294,6 +302,7 @@
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
-  <script src="./app.js?v=20260721-clipboard-fix"></script>
+  <script src="./app.js?v=20260726-library-arrows"></script>
+  <script src="./library.js?v=20260726-library-copypath"></script>
 </body>
 </html>

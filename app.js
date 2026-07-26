@@ -890,6 +890,7 @@ async function saveJsonOverwrite(){
     clearDirty();
     render();
     showToast('JSON sovrascritto: ' + data.path);
+    uploadCurrentLayoutPreview?.();
     return;
   }
   // 2) File aperto con Carica JSON (File System Access handle)
@@ -952,7 +953,7 @@ async function saveLayoutAs(){
   if(!data.ok){ alert('Errore salvataggio con nome: '+data.error); return; }
   state.currentLayoutPath = data.path;
   clearDirty();
-  await refreshLayoutLibrary().catch(()=>{});
+  uploadCurrentLayoutPreview?.();
   render();
   showToast('Layout salvato con nome: ' + data.path);
 }
@@ -1059,208 +1060,6 @@ async function reloadCurrentLayout(){
     setTimeout(()=>btn?.classList.remove('spinning'), 600);
   }
 }
-async function refreshLayoutLibrary(){
-  const grid=$('layoutGrid'); const meta=$('libraryMeta');
-  if(grid) grid.innerHTML='<div class="emptyGrid">Caricamento libreria…</div>';
-  const folderParam = encodeURIComponent(state.currentLibraryFolder || '');
-  let res=await fetch('/api/list-layouts?folder='+folderParam+'&ts='+Date.now(), {cache:'no-store'});
-  let payload=await res.json();
-  if(!payload.ok && state.currentLibraryFolder && String(payload.error || '').includes('Folder not found')){
-    // If a browser saved an old/renamed folder in localStorage, never trap the user in an error screen.
-    // Reset to the campaigns root so the gallery can show available folders and the Back breadcrumb again.
-    state.currentLibraryFolder='';
-    localStorage.setItem('robyLayoutLibraryFolder', '');
-    res=await fetch('/api/list-layouts?folder=&ts='+Date.now(), {cache:'no-store'});
-    payload=await res.json();
-  }
-  if(!payload.ok) throw new Error(payload.error || 'List failed');
-  state.libraryItems=payload.items || [];
-  state.libraryFolders=payload.folders || [];
-  state.currentLibraryFolder=payload.folder || '';
-  localStorage.setItem('robyLayoutLibraryFolder', state.currentLibraryFolder);
-  const availablePaths = new Set(state.libraryItems.filter(x=>x.kind==='layout').map(x=>x.path));
-  state.selectedLibraryPaths = state.selectedLibraryPaths.filter(path=>availablePaths.has(path));
-  if(payload.campaigns_root) state.campaignsRoot = payload.campaigns_root;
-  if(meta){
-    const layouts=(payload.items||[]).filter(x=>x.kind==='layout').length;
-    const images=(payload.items||[]).filter(x=>x.kind==='image').length;
-    const folderLabel=state.currentLibraryFolder ? `/${state.currentLibraryFolder}` : '/';
-    const root = payload.campaigns_root || state.campaignsRoot || '';
-    meta.textContent=`root: ${root} · ${payload.folder_count||0} cartelle · ${payload.count} elementi in ${folderLabel} · ${layouts} layout · ${images} immagini`;
-  }
-  renderLibraryBreadcrumb();
-  renderLibraryGrid();
-}
-function renderLibraryBreadcrumb(){
-  const box=$('libraryBreadcrumb'); if(!box) return;
-  box.innerHTML='';
-  const rootBtn=document.createElement('button'); rootBtn.textContent='Cartelle'; rootBtn.className='crumbBtn'; rootBtn.onclick=()=>goLibraryFolder(''); box.appendChild(rootBtn);
-  const parts=(state.currentLibraryFolder||'').split('/').filter(Boolean);
-  let acc='';
-  parts.forEach((part,idx)=>{
-    const sep=document.createElement('span'); sep.className='crumbSep'; sep.textContent='›'; box.appendChild(sep);
-    acc=acc ? acc+'/'+part : part;
-    const btn=document.createElement('button'); btn.textContent=part; btn.className='crumbBtn'+(idx===parts.length-1?' active':'');
-    const target=acc; btn.onclick=()=>goLibraryFolder(target); box.appendChild(btn);
-  });
-  if(parts.length){
-    const back=document.createElement('button'); back.textContent='← Indietro'; back.className='crumbBtn back';
-    back.onclick=()=>goLibraryFolder(parts.slice(0,-1).join('/'));
-    box.prepend(back);
-  }
-}
-function goLibraryFolder(folder){
-  state.currentLibraryFolder = folder || '';
-  state.selectedLibraryPaths = [];
-  localStorage.setItem('robyLayoutLibraryFolder', state.currentLibraryFolder);
-  return refreshLayoutLibrary().catch(e=>{ $('layoutGrid').innerHTML=`<div class="emptyGrid">Errore: ${escapeHtml(e.message)}</div>`; });
-}
-function openLayoutLibrary(){
-  $('layoutLibraryModal').hidden=false;
-  refreshLayoutLibrary().catch(e=>{ $('layoutGrid').innerHTML=`<div class="emptyGrid">Errore: ${escapeHtml(e.message)}</div>`; });
-}
-function closeLayoutLibrary(){ $('layoutLibraryModal').hidden=true; }
-function visibleLibraryItems(){
-  const q=($('librarySearch')?.value || '').toLowerCase().trim();
-  const kindFilter=$('libraryKindFilter')?.value || 'layout';
-  const folders = (state.libraryFolders || []).filter(f => !q || (f.name+' '+f.rel).toLowerCase().includes(q));
-  const items = state.libraryItems.filter(it=> {
-    if(kindFilter !== 'all' && it.kind !== kindFilter) return false;
-    return !q || (it.name+' '+it.rel+' '+it.path+' '+(it.kind||'')).toLowerCase().includes(q);
-  });
-  return [...folders, ...items];
-}
-function isLibrarySelected(path){ return state.selectedLibraryPaths.includes(path); }
-function setLibrarySelected(path, selected){
-  if(selected){
-    if(!state.selectedLibraryPaths.includes(path)) state.selectedLibraryPaths.push(path);
-  } else {
-    state.selectedLibraryPaths = state.selectedLibraryPaths.filter(x=>x!==path);
-  }
-  updateBulkExportButton();
-}
-function updateBulkExportButton(){
-  const btn=$('bulkExportBtn');
-  const count=state.selectedLibraryPaths.length;
-  if(btn){
-    btn.disabled = count === 0;
-    btn.textContent = count ? `Export selezionati (${count})` : 'Export selezionati';
-  }
-  updateSelectAllControl();
-}
-function updateSelectAllControl(){
-  const cb=$('librarySelectAllCheckbox');
-  const txt=$('librarySelectAllText');
-  if(!cb || !txt) return;
-  const visibleLayouts = visibleLibraryItems().filter(it=>it.kind==='layout');
-  const selectedVisible = visibleLayouts.filter(it=>isLibrarySelected(it.path)).length;
-  cb.disabled = visibleLayouts.length === 0;
-  cb.indeterminate = selectedVisible > 0 && selectedVisible < visibleLayouts.length;
-  cb.checked = visibleLayouts.length > 0 && selectedVisible === visibleLayouts.length;
-  txt.textContent = cb.checked ? `Deseleziona tutto (${visibleLayouts.length})` : (selectedVisible ? `Selezionati ${selectedVisible}/${visibleLayouts.length}` : 'Seleziona tutto');
-}
-function toggleVisibleLibrarySelection(forceChecked=null){
-  const visibleLayouts = visibleLibraryItems().filter(it=>it.kind==='layout');
-  if(!visibleLayouts.length) return;
-  const allSelected = visibleLayouts.every(it=>isLibrarySelected(it.path));
-  const next = forceChecked === null ? !allSelected : !!forceChecked;
-  visibleLayouts.forEach(it=>setLibrarySelected(it.path, next));
-  renderLibraryGrid();
-}
-function renderLibraryGrid(){
-  const grid=$('layoutGrid'); if(!grid) return;
-  const items=visibleLibraryItems();
-  updateBulkExportButton();
-  if(!items.length){ grid.innerHTML='<div class="emptyGrid">Nessun layout o asset trovato con questo filtro.</div>'; return; }
-  grid.innerHTML='';
-  items.forEach(item=>{
-    if(item.kind === 'folder'){
-      const card=document.createElement('div'); card.className='layoutCard folderCard';
-      const preview=document.createElement('div'); preview.className='previewBox folderPreview'; preview.innerHTML='<div class="folderIcon">📁</div>';
-      const info=document.createElement('div'); info.className='layoutInfo';
-      info.innerHTML=`<strong>${escapeHtml(item.name)}</strong><small>Cartella progetto · ${escapeHtml(item.rel || item.name)}</small><small>${item.layouts||0} layout · ${item.images||0} immagini</small>`;
-      const actions=document.createElement('div'); actions.className='layoutActions';
-      const openBtn=document.createElement('button'); openBtn.textContent='Apri cartella';
-      actions.append(openBtn); card.append(preview, info, actions); grid.appendChild(card);
-      const openFolder=()=>goLibraryFolder(item.rel || item.path || item.name);
-      preview.onclick=openFolder; card.ondblclick=openFolder; openBtn.onclick=openFolder;
-      return;
-    }
-    const card=document.createElement('div'); card.className='layoutCard' + (isLibrarySelected(item.path) ? ' selectedForExport' : '');
-    const preview=document.createElement('div'); preview.className='previewBox'; preview.title=item.kind==='image' ? 'Clicca per creare/aprire layout da immagine' : 'Clicca per aprire layout';
-    const checkboxWrap=document.createElement('label'); checkboxWrap.className='librarySelect'; checkboxWrap.title=item.kind==='layout' ? 'Seleziona per export bulk' : 'Export bulk disponibile solo per i JSON layout';
-    const checkbox=document.createElement('input'); checkbox.type='checkbox'; checkbox.checked=isLibrarySelected(item.path); checkbox.disabled=item.kind !== 'layout';
-    const checkboxText=document.createElement('span'); checkboxText.className='librarySelectText'; checkboxText.textContent=checkbox.checked ? 'Selezionato' : 'Seleziona';
-    checkbox.addEventListener('click', ev=>ev.stopPropagation());
-    checkboxWrap.addEventListener('click', ev=>ev.stopPropagation());
-    checkbox.addEventListener('change', ev=>{ setLibrarySelected(item.path, ev.target.checked); card.classList.toggle('selectedForExport', ev.target.checked); checkboxText.textContent=ev.target.checked ? 'Selezionato' : 'Seleziona'; });
-    checkboxWrap.append(checkbox, checkboxText);
-    const info=document.createElement('div'); info.className='layoutInfo';
-    const badge=item.kind==='image' ? (item.has_layout ? 'Immagine + layout' : 'Immagine') : 'Layout';
-    const actionLabel=item.kind==='image' ? (item.has_layout ? 'Apri layout' : 'Crea layout') : 'Apri';
-    info.innerHTML=`<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${escapeHtml(item.rel)}</small><small>${item.canvas?.width||'?'}×${item.canvas?.height||'?'} · ${item.kind==='layout' ? item.layers+' layer' : 'asset immagine'} · ${item.mtime_iso}</small>`;
-    const actions=document.createElement('div'); actions.className='layoutActions';
-    const openBtn=document.createElement('button'); openBtn.textContent=actionLabel;
-    const delBtn=document.createElement('button'); delBtn.textContent='Cancella'; delBtn.className='danger';
-    if(item.kind !== 'layout'){ delBtn.disabled=true; delBtn.title='La cancellazione è abilitata solo sui file .layout.json, non sulle immagini finali.'; }
-    actions.append(openBtn,delBtn); card.append(preview, checkboxWrap, info, actions); grid.appendChild(card);
-    loadPreviewInto(preview,item);
-    const toggleCardSelection=()=>{
-      if(item.kind !== 'layout') return;
-      const next=!isLibrarySelected(item.path);
-      checkbox.checked=next;
-      setLibrarySelected(item.path,next);
-      checkboxText.textContent=next ? 'Selezionato' : 'Seleziona';
-      card.classList.toggle('selectedForExport', next);
-    };
-    const open=()=>openLibraryItem(item).then(()=>closeLayoutLibrary()).catch(e=>alert('Errore apertura: '+e.message));
-    preview.onclick=toggleCardSelection; card.ondblclick=open; openBtn.onclick=open;
-    delBtn.onclick=async()=>{
-      if(item.kind !== 'layout') return;
-      if(!confirm(`Cancellare definitivamente questo layout?\n\n${item.rel}`)) return;
-      const res=await fetch('/api/delete-layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:item.path})});
-      const data=await res.json();
-      if(!data.ok){ alert('Errore cancellazione: '+data.error); return; }
-      await refreshLayoutLibrary();
-    };
-  });
-}
-async function openLibraryItem(item){
-  if(item.kind === 'image'){
-    if(item.has_layout && item.layout_path){
-      return loadLayoutUrl(item.layout_path);
-    }
-    const res=await fetch('/api/create-layout-from-image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:item.path})});
-    const data=await res.json();
-    if(!data.ok) throw new Error(data.error || 'Create layout failed');
-    loadLayoutObject(data.layout, data.path);
-    await refreshLayoutLibrary().catch(()=>{});
-    return;
-  }
-  return loadLayoutUrl(item.path);
-}
-async function loadPreviewInto(box,item){
-  try{
-    if(item.kind === 'image'){
-      const img=document.createElement('img');
-      const src='/api/file?path='+encodeURIComponent(item.path);
-      img.src=src; img.alt=item.name; img.loading='lazy'; img.style.maxWidth='100%'; img.style.maxHeight='200px'; img.style.objectFit='contain';
-      [...box.childNodes].forEach(node=>{ if(!node.classList || !node.classList.contains('librarySelect')) node.remove(); }); box.appendChild(img); return;
-    }
-    let layout;
-    if(item.path.startsWith('./')){
-      const res=await fetch(item.path,{cache:'no-store'}); layout=await res.json();
-    } else {
-      const res=await fetch('/api/load-layout?path='+encodeURIComponent(item.path),{cache:'no-store'}); const payload=await res.json(); layout=payload.layout;
-    }
-    const c=document.createElement('canvas'); const w=layout.canvas?.width||1080, h=layout.canvas?.height||1350;
-    const maxW=210, maxH=195, scale=Math.min(maxW/w,maxH/h);
-    c.width=Math.round(w*scale); c.height=Math.round(h*scale);
-    const ctx=c.getContext('2d'); ctx.scale(scale,scale);
-    await renderLayoutToCanvas(ctx, layout, w, h);
-    [...box.childNodes].forEach(node=>{ if(!node.classList || !node.classList.contains('librarySelect')) node.remove(); }); box.appendChild(c);
-  }catch(e){ box.innerHTML='<small class="muted">Preview non disponibile</small>'; }
-}
 async function renderLayoutToCanvas(ctx, layout, w, h){
   ctx.fillStyle=layout.canvas?.background || '#ffffff'; ctx.fillRect(0,0,w,h);
   for(const l of [...(layout.layers||[])].sort((a,b)=>(a.z||0)-(b.z||0))){
@@ -1276,7 +1075,6 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
     ctx.restore();
   }
 }
-async function loadReadyLayouts(){ await refreshLayoutLibrary(); }
 function downloadBlob(content, name, type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500); }
 
 function exportMimeSettings(){
@@ -1670,6 +1468,7 @@ function bindKeyboardShortcuts(){
       return;
     }
     if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(ev.key) && state.selectedIds.length){
+      if(typeof isLibraryModalOpen === 'function' && isLibraryModalOpen()) return;
       ev.preventDefault();
       const step = ev.shiftKey ? 10 : 1;
       pushHistory();
@@ -1754,6 +1553,7 @@ function init(){
   $('openLibraryBtn').onclick=openLayoutLibrary;
   $('closeLibraryBtn').onclick=closeLayoutLibrary;
   $('refreshLibraryBtn').onclick=()=>refreshLayoutLibrary().catch(e=>alert('Errore aggiornamento libreria: '+e.message));
+  $('libraryViewToggleBtn')?.addEventListener('click', ()=>setLibraryViewMode(state.libraryViewMode === 'list' ? 'grid' : 'list'));
   $('bulkExportBtn').onclick=exportSelectedLayouts;
   $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
   $('librarySearch').oninput=renderLibraryGrid;
@@ -1784,7 +1584,6 @@ function init(){
   $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearLocalFileHandle(); clearDirty(); render(); }};
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
   loadServerHealth().finally(()=>{
-    loadReadyLayouts();
     render();
     ensureHostFontsInSelect?.().then(()=>{
       const l = selected();
@@ -1793,8 +1592,8 @@ function init(){
     }).catch(()=>{});
   });
 }
-if(!window.ROBY_EXPORT_MODE) init();
-else {
+// init() runs from library.js after library helpers are defined (export mode skips it).
+if(window.ROBY_EXPORT_MODE){
   window.__robyExportReady = true;
   document.getElementById('exportStatus') && (document.getElementById('exportStatus').textContent = 'ready');
 }

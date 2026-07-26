@@ -45,6 +45,36 @@
 #layoutGrid .folderCard .layoutInfo{padding:12px!important}
 #layoutGrid .folderCard .layoutActions{padding:0 10px 10px 10px!important;margin-top:auto!important}
 
+/* Library list + side preview (default) */
+.libraryWorkspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,38%);overflow:hidden}
+#layoutLibraryModal .libraryWorkspace{flex:1 1 auto!important;min-height:0!important}
+.libraryWorkspace.view-grid{grid-template-columns:1fr}
+.libraryWorkspace.view-grid .librarySidePreview{display:none}
+.librarySidePreview{display:flex;flex-direction:column;gap:10px;padding:14px;border-left:1px solid var(--line);background:#0f1116;min-height:0;overflow:auto}
+.librarySidePreviewFrame{flex:1 1 auto;min-height:240px;display:flex;align-items:center;justify-content:center;background:#0b0c10;border:1px solid var(--line);border-radius:12px;overflow:hidden;padding:10px}
+.librarySidePreviewFrame canvas,.librarySidePreviewFrame img{max-width:100%;max-height:100%;object-fit:contain}
+.librarySidePreviewMeta{display:flex;flex-direction:column;gap:4px}
+.librarySidePreviewMeta strong{font-size:14px;word-break:break-word}
+.librarySidePreviewMeta small{font-size:11px;color:var(--muted);word-break:break-word}
+.libraryPathCopy{cursor:pointer;color:#93c5fd!important;text-decoration:underline dotted;word-break:break-all}
+.libraryPathCopy:hover{color:#bfdbfe!important}
+.librarySidePreviewActions{display:flex;gap:8px;flex-wrap:wrap}
+.librarySidePreviewActions button{flex:1;min-width:110px}
+.sideFolderIcon{font-size:96px;line-height:1}
+.libraryWorkspace #layoutGrid{min-height:0!important;height:auto!important;max-height:100%!important;align-self:stretch}
+#layoutGrid.libraryList{display:flex!important;flex-direction:column!important;gap:0!important;padding:0!important;overflow-y:auto!important;grid-template-columns:none!important}
+.libraryRow{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;background:transparent}
+.libraryRow:hover{background:#171a21}
+.libraryRow.focused{background:rgba(79,140,255,.12);box-shadow:inset 3px 0 0 var(--blue)}
+.libraryRow.selectedForExport{background:rgba(235,0,41,.1)}
+.libraryRow.folderRow .libraryRowTitle strong{color:#fde68a}
+.libraryRowCheck{display:flex;align-items:center;justify-content:center}
+.libraryRowCheck input{width:16px;height:16px;accent-color:var(--accent)}
+.libraryRowTitle{min-width:0;display:flex;flex-direction:column;gap:2px}
+.libraryRowTitle strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.libraryRowTitle small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.libraryRowOpen{padding:6px 10px;font-size:12px;white-space:nowrap}
+
 /* Layer sidebar: keep canvas controls visible and scroll only the layer window */
 .panel.left{display:flex!important;flex-direction:column!important;overflow:hidden!important;min-height:0!important}.panel.left .layers{flex:1 1 auto!important;min-height:120px!important;overflow-y:auto!important;overflow-x:hidden!important;padding-right:4px!important;scrollbar-width:thin!important;scrollbar-color:var(--accent) #0f1116!important}.panel.left .layers::-webkit-scrollbar{width:8px}.panel.left .layers::-webkit-scrollbar-track{background:#0f1116;border-radius:10px}.panel.left .layers::-webkit-scrollbar-thumb{background:var(--accent);border-radius:10px}
 /* Four-corner resize handles */

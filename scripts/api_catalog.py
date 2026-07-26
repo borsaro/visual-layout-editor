@@ -2,13 +2,15 @@
 
 ENDPOINTS = [
     {'method': 'GET', 'path': '/api/health', 'desc': 'Health + capabilities + endpoint catalog'},
-    {'method': 'GET', 'path': '/api/list-layouts', 'desc': 'List campaign folders/layouts/images?folder='},
+    {'method': 'GET', 'path': '/api/list-layouts', 'desc': 'List campaign folders/layouts/images?folder=&phase=folders|items|all&light=1'},
     {'method': 'GET', 'path': '/api/load-layout', 'desc': 'Load layout JSON?path='},
+    {'method': 'GET', 'path': '/api/layout-preview', 'desc': 'Serve layout sidecar JPEG preview?path='},
     {'method': 'GET', 'path': '/api/file', 'desc': 'Serve image bytes?path= (_assets/… or campaign-relative)'},
     {'method': 'GET', 'path': '/api/fonts', 'desc': 'List host Font Book families (Docker-mounted Mac fonts)'},
     {'method': 'GET', 'path': '/api/font-file', 'desc': 'Serve one host font file?id='},
     {'method': 'POST', 'path': '/api/save-layout', 'desc': 'Overwrite layout {path, layout}'},
     {'method': 'POST', 'path': '/api/save-layout-as', 'desc': 'Save copy {path, filename, layout}'},
+    {'method': 'POST', 'path': '/api/save-preview', 'desc': 'Save layout thumbnail JPEG {path, image_base64}'},
     {'method': 'POST', 'path': '/api/delete-layout', 'desc': 'Delete .layout.json {path}'},
     {'method': 'POST', 'path': '/api/create-layout-from-image', 'desc': 'Create sidecar layout from image {path}'},
     {

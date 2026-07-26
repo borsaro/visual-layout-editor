@@ -142,20 +142,20 @@ def resolve_campaign_folder(raw: str) -> Path:
 
 
 def folder_meta(path: Path):
+    """Light folder row — no recursive rglob counts (those made root listing very slow)."""
     rel, scope = rel_scope(path)
-    layout_count = sum(1 for _ in path.rglob('*.layout.json'))
-    image_count = sum(1 for ext in IMAGE_EXTS for _ in path.rglob(f'*{ext}'))
+    st = path.stat()
     return {
         'kind': 'folder',
         'name': path.name,
         'path': rel,
         'rel': rel,
         'scope': scope,
-        'layouts': layout_count,
-        'images': image_count,
-        'count': layout_count + image_count,
-        'mtime': int(path.stat().st_mtime),
-        'mtime_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(path.stat().st_mtime)),
+        'layouts': None,
+        'images': None,
+        'count': None,
+        'mtime': int(st.st_mtime),
+        'mtime_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.st_mtime)),
     }
 
 
@@ -218,16 +218,21 @@ def image_size(path: Path):
     return 1080, 1350
 
 
-def layout_meta(path: Path):
+def layout_meta(path: Path, light: bool = True):
+    from library_preview import preview_url_for
     st = path.stat()
-    try:
-        data = json.loads(path.read_text(encoding='utf-8'))
-        canvas = data.get('canvas') or {}
-        layers = data.get('layers') or []
-        w = canvas.get('width'); h = canvas.get('height')
-    except Exception:
-        w = h = None; layers = []
     rel, scope = rel_scope(path)
+    w = h = None
+    layer_count = None
+    if not light:
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+            canvas = data.get('canvas') or {}
+            layers = data.get('layers') or []
+            w = canvas.get('width'); h = canvas.get('height')
+            layer_count = len(layers)
+        except Exception:
+            pass
     return {
         'kind': 'layout',
         'name': path.name,
@@ -238,14 +243,17 @@ def layout_meta(path: Path):
         'mtime': int(st.st_mtime),
         'mtime_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.st_mtime)),
         'canvas': {'width': w, 'height': h},
-        'layers': len(layers),
-        'preview_src': None,
+        'layers': layer_count,
+        'preview_src': preview_url_for(path, public_path),
     }
 
 
-def image_meta(path: Path):
-    st = path.stat(); w, h = image_size(path); rel, scope = rel_scope(path)
+def image_meta(path: Path, light: bool = True):
+    st = path.stat(); rel, scope = rel_scope(path)
     lp = path.with_name(path.stem + '.layout.json')
+    w = h = None
+    if not light:
+        w, h = image_size(path)
     return {
         'kind': 'image',
         'name': path.name,
@@ -288,7 +296,8 @@ def make_layout_from_image(path: Path):
 class RobyLayoutHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
         # Local editor assets change often; avoid sticky browser cache of JS/CSS.
-        self.send_header('Cache-Control', 'no-store')
+        if not getattr(self, '_allow_cache', False):
+            self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
     def _json(self, status, data):
@@ -315,32 +324,35 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             if parsed.path == '/api/list-layouts':
                 q = parse_qs(parsed.query)
                 include_images = q.get('include_images', ['1'])[0] != '0'
+                phase = (q.get('phase') or ['all'])[0]
+                light = (q.get('light') or ['1'])[0] != '0'
                 folder_rel = clean_folder_rel((q.get('folder') or [''])[0])
                 folder = resolve_campaign_folder(folder_rel)
                 folders = []
-                if CAMPAIGNS_ROOT.exists():
-                    for child in sorted([x for x in folder.iterdir() if x.is_dir() and not x.name.startswith('.')], key=lambda x: x.name.lower()):
+                items = []
+                if phase in ('folders', 'all') and CAMPAIGNS_ROOT.exists() and folder.exists():
+                    for child in sorted(
+                        [x for x in folder.iterdir() if x.is_dir() and not x.name.startswith('.')],
+                        key=lambda x: x.name.lower(),
+                    ):
                         folders.append(folder_meta(child))
-                files = []
-                if folder.exists():
-                    # Root is the project-folder overview: show direct root files only (normally none), not every project recursively.
-                    # Inside a project folder, show the whole project gallery recursively.
+                if phase in ('items', 'all') and folder.exists():
+                    # Root: direct files only. Inside a project: recursive gallery.
                     walker = folder.rglob if folder_rel else folder.glob
-                    files.extend(walker('*.layout.json'))
+                    files = list(walker('*.layout.json'))
                     if include_images:
                         for ext in IMAGE_EXTS:
                             files.extend(walker(f'*{ext}'))
-                            files.extend(walker(f'*{ext.upper()}'))
-                seen = set(); items = []
-                for p in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
-                    rp = p.resolve()
-                    if rp in seen or not any(under(rp, r) for r in ALLOWED_ROOTS):
-                        continue
-                    seen.add(rp)
-                    if rp.name.endswith('.layout.json'):
-                        items.append(layout_meta(rp))
-                    elif rp.suffix.lower() in IMAGE_EXTS:
-                        items.append(image_meta(rp))
+                    seen = set()
+                    for p in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
+                        rp = p.resolve()
+                        if rp in seen or not any(under(rp, r) for r in ALLOWED_ROOTS):
+                            continue
+                        seen.add(rp)
+                        if rp.name.endswith('.layout.json'):
+                            items.append(layout_meta(rp, light=light))
+                        elif rp.suffix.lower() in IMAGE_EXTS:
+                            items.append(image_meta(rp, light=light))
                 parent = ''
                 if folder_rel:
                     parent = '/'.join(folder_rel.split('/')[:-1])
@@ -349,6 +361,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'campaigns_root': str(CAMPAIGNS_ROOT),
                     'folder': folder_rel,
                     'parent': parent,
+                    'phase': phase,
                     'folders': folders,
                     'folder_count': len(folders),
                     'count': len(items),
@@ -360,6 +373,23 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 p = resolve_allowed_layout((q.get('path') or [''])[0])
                 data = json.loads(p.read_text(encoding='utf-8'))
                 self._json(200, {'ok': True, 'path': public_path(p), 'layout': data})
+                return
+            if parsed.path == '/api/layout-preview':
+                from library_preview import preview_sidecar_path
+                q = parse_qs(parsed.query)
+                layout_path = resolve_allowed_layout((q.get('path') or [''])[0])
+                side = preview_sidecar_path(layout_path)
+                if not side.exists():
+                    self._json(404, {'ok': False, 'error': 'Preview not found'})
+                    return
+                data = side.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/jpeg')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'public, max-age=3600')
+                self._allow_cache = True
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if parsed.path == '/api/file':
                 q = parse_qs(parsed.query)
@@ -386,6 +416,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 self.send_header('Content-Type', ctype)
                 self.send_header('Content-Length', str(len(data)))
                 self.send_header('Cache-Control', 'public, max-age=86400')
+                self._allow_cache = True
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -403,12 +434,34 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/create-layout-from-image',
             '/api/export',
             '/api/patch-layers',
+            '/api/save-preview',
         ]:
             self.send_error(404, 'Unknown API endpoint')
             return
         try:
             length = int(self.headers.get('Content-Length', '0'))
             payload = json.loads(self.rfile.read(length).decode('utf-8') or '{}')
+            if parsed.path == '/api/save-preview':
+                from library_preview import preview_sidecar_path
+                target = resolve_allowed_layout(payload.get('path'))
+                raw_b64 = payload.get('image_base64') or ''
+                if ',' in raw_b64:
+                    raw_b64 = raw_b64.split(',', 1)[1]
+                if not raw_b64:
+                    raise ValueError('Missing image_base64')
+                jpeg = base64.b64decode(raw_b64)
+                if len(jpeg) < 32:
+                    raise ValueError('Preview too small')
+                side = preview_sidecar_path(target)
+                side.write_bytes(jpeg)
+                self._json(200, {
+                    'ok': True,
+                    'path': public_path(target),
+                    'preview_src': '/api/layout-preview?path=' + public_path(target),
+                    'bytes': len(jpeg),
+                })
+                return
+
             if parsed.path == '/api/create-layout-from-image':
                 image_path = resolve_allowed_image(payload.get('path'))
                 target = image_path.with_name(image_path.stem + '.layout.json')
@@ -492,7 +545,14 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
 
             current_path = resolve_allowed_layout(payload.get('path'))
             if parsed.path == '/api/delete-layout':
+                from library_preview import preview_sidecar_path
+                side = preview_sidecar_path(current_path)
                 current_path.unlink()
+                if side.exists():
+                    try:
+                        side.unlink()
+                    except Exception:
+                        pass
                 self._json(200, {'ok': True, 'deleted': public_path(current_path)})
                 return
             layout = payload.get('layout')

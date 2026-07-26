@@ -1,0 +1,699 @@
+/** Layout library: list-first, two-phase folder nav, lazy thumbs. */
+state.libraryViewMode = localStorage.getItem('robyLibraryViewMode') || 'list';
+state.libraryFocusKey = null;
+state.libraryFoldersReady = false;
+state.libraryItemsReady = false;
+
+let libraryLoadId = 0;
+let libraryScrollTimer = null;
+const PREVIEW_MAX = 2;
+let previewActive = 0;
+const previewWait = [];
+
+function libraryItemKey(item){
+  if(!item) return '';
+  if(item.kind === 'folder') return 'folder:' + (item.rel || item.path || item.name);
+  return (item.kind || 'x') + ':' + (item.path || item.rel || item.name);
+}
+function findLibraryItemByKey(key){
+  return visibleLibraryItems().find(it => libraryItemKey(it) === key) || null;
+}
+function setLibraryViewMode(mode){
+  state.libraryViewMode = mode === 'grid' ? 'grid' : 'list';
+  localStorage.setItem('robyLibraryViewMode', state.libraryViewMode);
+  const ws = $('libraryWorkspace');
+  if(ws) ws.classList.toggle('view-grid', state.libraryViewMode === 'grid');
+  const btn = $('libraryViewToggleBtn');
+  if(btn) btn.textContent = state.libraryViewMode === 'list' ? 'Vista griglia' : 'Vista lista';
+  renderLibraryGrid();
+}
+function syncLibraryViewChrome(){
+  const ws = $('libraryWorkspace');
+  if(ws) ws.classList.toggle('view-grid', state.libraryViewMode === 'grid');
+  const btn = $('libraryViewToggleBtn');
+  if(btn) btn.textContent = state.libraryViewMode === 'list' ? 'Vista griglia' : 'Vista lista';
+}
+
+async function fetchLibraryPhase(folder, phase){
+  const folderParam = encodeURIComponent(folder || '');
+  const res = await fetch(
+    '/api/list-layouts?folder=' + folderParam + '&phase=' + phase + '&light=1&ts=' + Date.now(),
+    { cache: 'no-store' }
+  );
+  return res.json();
+}
+
+async function refreshLayoutLibrary(){
+  const loadId = ++libraryLoadId;
+  const grid = $('layoutGrid');
+  const meta = $('libraryMeta');
+  const folderWanted = state.currentLibraryFolder || '';
+  state.libraryFoldersReady = false;
+  state.libraryItemsReady = false;
+  state.libraryFocusKey = null;
+  if(grid) grid.innerHTML = '<div class="emptyGrid">Caricamento cartelle…</div>';
+  clearLibrarySidePreview();
+
+  let foldersPayload = await fetchLibraryPhase(folderWanted, 'folders');
+  if(loadId !== libraryLoadId) return;
+  if(!foldersPayload.ok && folderWanted && String(foldersPayload.error || '').includes('Folder not found')){
+    state.currentLibraryFolder = '';
+    localStorage.setItem('robyLayoutLibraryFolder', '');
+    foldersPayload = await fetchLibraryPhase('', 'folders');
+    if(loadId !== libraryLoadId) return;
+  }
+  if(!foldersPayload.ok) throw new Error(foldersPayload.error || 'List folders failed');
+
+  state.libraryFolders = foldersPayload.folders || [];
+  state.libraryItems = [];
+  state.currentLibraryFolder = foldersPayload.folder || '';
+  localStorage.setItem('robyLayoutLibraryFolder', state.currentLibraryFolder);
+  if(foldersPayload.campaigns_root) state.campaignsRoot = foldersPayload.campaigns_root;
+  state.libraryFoldersReady = true;
+  renderLibraryBreadcrumb();
+  renderLibraryGrid();
+
+  if(meta){
+    const folderLabel = state.currentLibraryFolder ? `/${state.currentLibraryFolder}` : '/';
+    const root = foldersPayload.campaigns_root || state.campaignsRoot || '';
+    meta.textContent = `root: ${root} · ${foldersPayload.folder_count || 0} cartelle in ${folderLabel} · caricamento elementi…`;
+  }
+
+  const itemsPayload = await fetchLibraryPhase(state.currentLibraryFolder, 'items');
+  if(loadId !== libraryLoadId) return;
+  if(!itemsPayload.ok) throw new Error(itemsPayload.error || 'List items failed');
+
+  state.libraryItems = itemsPayload.items || [];
+  state.libraryItemsReady = true;
+  const availablePaths = new Set(state.libraryItems.filter(x => x.kind === 'layout').map(x => x.path));
+  state.selectedLibraryPaths = state.selectedLibraryPaths.filter(path => availablePaths.has(path));
+  if(meta){
+    const layouts = state.libraryItems.filter(x => x.kind === 'layout').length;
+    const images = state.libraryItems.filter(x => x.kind === 'image').length;
+    const folderLabel = state.currentLibraryFolder ? `/${state.currentLibraryFolder}` : '/';
+    const root = itemsPayload.campaigns_root || state.campaignsRoot || '';
+    meta.textContent = `root: ${root} · ${state.libraryFolders.length} cartelle · ${itemsPayload.count} elementi in ${folderLabel} · ${layouts} layout · ${images} immagini`;
+  }
+  renderLibraryGrid();
+  ensureLibraryFocus();
+}
+
+function renderLibraryBreadcrumb(){
+  const box = $('libraryBreadcrumb');
+  if(!box) return;
+  box.innerHTML = '';
+  const rootBtn = document.createElement('button');
+  rootBtn.textContent = 'Cartelle';
+  rootBtn.className = 'crumbBtn';
+  rootBtn.onclick = () => goLibraryFolder('');
+  box.appendChild(rootBtn);
+  const parts = (state.currentLibraryFolder || '').split('/').filter(Boolean);
+  let acc = '';
+  parts.forEach((part, idx) => {
+    const sep = document.createElement('span');
+    sep.className = 'crumbSep';
+    sep.textContent = '›';
+    box.appendChild(sep);
+    acc = acc ? acc + '/' + part : part;
+    const btn = document.createElement('button');
+    btn.textContent = part;
+    btn.className = 'crumbBtn' + (idx === parts.length - 1 ? ' active' : '');
+    const target = acc;
+    btn.onclick = () => goLibraryFolder(target);
+    box.appendChild(btn);
+  });
+  if(parts.length){
+    const back = document.createElement('button');
+    back.textContent = '← Indietro';
+    back.className = 'crumbBtn back';
+    back.onclick = () => goLibraryFolder(parts.slice(0, -1).join('/'));
+    box.prepend(back);
+  }
+}
+
+function goLibraryFolder(folder){
+  libraryLoadId += 1;
+  state.currentLibraryFolder = folder || '';
+  state.selectedLibraryPaths = [];
+  state.libraryFocusKey = null;
+  state.libraryFolders = [];
+  state.libraryItems = [];
+  state.libraryFoldersReady = false;
+  state.libraryItemsReady = false;
+  localStorage.setItem('robyLayoutLibraryFolder', state.currentLibraryFolder);
+  renderLibraryBreadcrumb();
+  const grid = $('layoutGrid');
+  if(grid) grid.innerHTML = '<div class="emptyGrid">Apro cartella…</div>';
+  clearLibrarySidePreview();
+  return refreshLayoutLibrary().catch(e => {
+    if($('layoutGrid')) $('layoutGrid').innerHTML = `<div class="emptyGrid">Errore: ${escapeHtml(e.message)}</div>`;
+  });
+}
+
+function openLayoutLibrary(){
+  $('layoutLibraryModal').hidden = false;
+  syncLibraryViewChrome();
+  refreshLayoutLibrary().catch(e => {
+    if($('layoutGrid')) $('layoutGrid').innerHTML = `<div class="emptyGrid">Errore: ${escapeHtml(e.message)}</div>`;
+  });
+}
+function closeLayoutLibrary(){ $('layoutLibraryModal').hidden = true; }
+
+function visibleLibraryItems(){
+  const q = ($('librarySearch')?.value || '').toLowerCase().trim();
+  const kindFilter = $('libraryKindFilter')?.value || 'layout';
+  const folders = (state.libraryFolders || []).filter(f => !q || (f.name + ' ' + f.rel).toLowerCase().includes(q));
+  const items = state.libraryItems.filter(it => {
+    if(kindFilter !== 'all' && it.kind !== kindFilter) return false;
+    return !q || (it.name + ' ' + it.rel + ' ' + it.path + ' ' + (it.kind || '')).toLowerCase().includes(q);
+  });
+  return [...folders, ...items];
+}
+
+function isLibrarySelected(path){ return state.selectedLibraryPaths.includes(path); }
+function setLibrarySelected(path, selected){
+  if(selected){
+    if(!state.selectedLibraryPaths.includes(path)) state.selectedLibraryPaths.push(path);
+  } else {
+    state.selectedLibraryPaths = state.selectedLibraryPaths.filter(x => x !== path);
+  }
+  updateBulkExportButton();
+}
+function updateBulkExportButton(){
+  const btn = $('bulkExportBtn');
+  const count = state.selectedLibraryPaths.length;
+  if(btn){
+    btn.disabled = count === 0;
+    btn.textContent = count ? `Export selezionati (${count})` : 'Export selezionati';
+  }
+  updateSelectAllControl();
+}
+function updateSelectAllControl(){
+  const cb = $('librarySelectAllCheckbox');
+  const txt = $('librarySelectAllText');
+  if(!cb || !txt) return;
+  const visibleLayouts = visibleLibraryItems().filter(it => it.kind === 'layout');
+  const selectedVisible = visibleLayouts.filter(it => isLibrarySelected(it.path)).length;
+  cb.disabled = visibleLayouts.length === 0;
+  cb.indeterminate = selectedVisible > 0 && selectedVisible < visibleLayouts.length;
+  cb.checked = visibleLayouts.length > 0 && selectedVisible === visibleLayouts.length;
+  txt.textContent = cb.checked
+    ? `Deseleziona tutto (${visibleLayouts.length})`
+    : (selectedVisible ? `Selezionati ${selectedVisible}/${visibleLayouts.length}` : 'Seleziona tutto');
+}
+function toggleVisibleLibrarySelection(forceChecked = null){
+  const visibleLayouts = visibleLibraryItems().filter(it => it.kind === 'layout');
+  if(!visibleLayouts.length) return;
+  const allSelected = visibleLayouts.every(it => isLibrarySelected(it.path));
+  const next = forceChecked === null ? !allSelected : !!forceChecked;
+  visibleLayouts.forEach(it => setLibrarySelected(it.path, next));
+  renderLibraryGrid();
+}
+
+function ensureLibraryFocus(){
+  const items = visibleLibraryItems();
+  if(!items.length){ clearLibrarySidePreview(); return; }
+  if(state.libraryFocusKey && findLibraryItemByKey(state.libraryFocusKey)){
+    focusLibraryItem(state.libraryFocusKey, { scroll: false });
+    return;
+  }
+  const firstFile = items.find(it => it.kind !== 'folder') || items[0];
+  focusLibraryItem(libraryItemKey(firstFile), { scroll: false });
+}
+
+function focusLibraryItem(key, opts = {}){
+  if(!key) return;
+  state.libraryFocusKey = key;
+  const grid = $('layoutGrid');
+  if(grid){
+    grid.querySelectorAll('.libraryRow.focused, .layoutCard.focused').forEach(el => el.classList.remove('focused'));
+    const el = [...grid.querySelectorAll('[data-lib-key]')].find(n => n.dataset.libKey === key);
+    if(el){
+      el.classList.add('focused');
+      if(opts.scroll !== false) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  const item = findLibraryItemByKey(key);
+  updateLibrarySidePreview(item);
+}
+
+function isLibraryModalOpen(){
+  const modal = $('layoutLibraryModal');
+  return !!(modal && !modal.hidden);
+}
+
+function moveLibraryFocus(delta){
+  if(!isLibraryModalOpen()) return false;
+  const items = visibleLibraryItems();
+  if(!items.length) return false;
+  const keys = items.map(libraryItemKey);
+  let idx = keys.indexOf(state.libraryFocusKey);
+  if(idx < 0) idx = delta > 0 ? -1 : 0;
+  const next = Math.max(0, Math.min(keys.length - 1, idx + delta));
+  if(next === idx && state.libraryFocusKey === keys[next]) return true;
+  focusLibraryItem(keys[next], { scroll: true });
+  return true;
+}
+
+function bindLibraryKeyboard(){
+  if(window.__robyLibraryKeysBound) return;
+  window.__robyLibraryKeysBound = true;
+  document.addEventListener('keydown', (ev) => {
+    if(!isLibraryModalOpen()) return;
+    if(typeof isTypingTarget === 'function' && isTypingTarget(ev.target)) return;
+    if(ev.key === 'ArrowDown'){
+      ev.preventDefault();
+      moveLibraryFocus(1);
+      return;
+    }
+    if(ev.key === 'ArrowUp'){
+      ev.preventDefault();
+      moveLibraryFocus(-1);
+      return;
+    }
+    if(ev.key === 'Enter'){
+      const item = findLibraryItemByKey(state.libraryFocusKey);
+      if(!item) return;
+      ev.preventDefault();
+      if(item.kind === 'folder') goLibraryFolder(item.rel || item.path || item.name);
+      else openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
+    }
+  });
+}
+
+function copyPathLine(item){
+  const line = document.createElement('small');
+  line.className = 'libraryPathCopy';
+  line.title = 'Clicca per copiare il percorso';
+  const path = item.kind === 'folder' ? (item.rel || item.name) : (item.path || item.rel || item.name);
+  line.textContent = path;
+  line.onclick = () => {
+    copyTextToClipboard(path)
+      .then(() => showToast('Percorso copiato: ' + path))
+      .catch(e => showToast('Copia fallita: ' + (e.message || e)));
+  };
+  return line;
+}
+
+function clearLibrarySidePreview(){
+  const frame = $('librarySidePreviewFrame');
+  const meta = $('librarySidePreviewMeta');
+  const actions = $('librarySidePreviewActions');
+  if(frame) frame.innerHTML = '<div class="emptyGrid">Seleziona un elemento</div>';
+  if(meta) meta.innerHTML = '';
+  if(actions) actions.innerHTML = '';
+}
+
+function updateLibrarySidePreview(item){
+  const frame = $('librarySidePreviewFrame');
+  const meta = $('librarySidePreviewMeta');
+  const actions = $('librarySidePreviewActions');
+  if(!frame || !meta || !actions) return;
+  if(!item){ clearLibrarySidePreview(); return; }
+
+  if(item.kind === 'folder'){
+    frame.innerHTML = '<div class="folderIcon sideFolderIcon">📁</div>';
+    meta.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>Cartella progetto</small>`;
+    meta.appendChild(copyPathLine(item));
+    actions.innerHTML = '';
+    const openBtn = document.createElement('button');
+    openBtn.className = 'primary';
+    openBtn.textContent = 'Apri cartella';
+    openBtn.onclick = () => goLibraryFolder(item.rel || item.path || item.name);
+    actions.appendChild(openBtn);
+    return;
+  }
+
+  const badge = item.kind === 'image' ? (item.has_layout ? 'Immagine + layout' : 'Immagine') : 'Layout';
+  const size = (item.canvas?.width && item.canvas?.height) ? `${item.canvas.width}×${item.canvas.height}` : '—';
+  meta.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${size} · ${item.mtime_iso || ''}</small>`;
+  meta.appendChild(copyPathLine(item));
+  actions.innerHTML = '';
+  const openBtn = document.createElement('button');
+  openBtn.className = 'primary';
+  openBtn.textContent = item.kind === 'image' ? (item.has_layout ? 'Apri layout' : 'Crea layout') : 'Apri';
+  openBtn.onclick = () => openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
+  actions.appendChild(openBtn);
+  if(item.kind === 'layout'){
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger';
+    delBtn.textContent = 'Cancella';
+    delBtn.onclick = () => deleteLibraryLayout(item);
+    actions.appendChild(delBtn);
+  }
+  frame.innerHTML = '<div class="emptyGrid">Anteprima…</div>';
+  loadPreviewInto(frame, item, { persist: true, expectKey: libraryItemKey(item) });
+}
+
+async function deleteLibraryLayout(item){
+  if(item.kind !== 'layout') return;
+  if(!confirm(`Cancellare definitivamente questo layout?\n\n${item.rel}`)) return;
+  const res = await fetch('/api/delete-layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: item.path }),
+  });
+  const data = await res.json();
+  if(!data.ok){ alert('Errore cancellazione: ' + data.error); return; }
+  await refreshLayoutLibrary();
+}
+
+function bindLibraryListScroll(){
+  const grid = $('layoutGrid');
+  if(!grid || grid.dataset.scrollBound) return;
+  grid.dataset.scrollBound = '1';
+  grid.addEventListener('scroll', () => {
+    if(state.libraryViewMode !== 'list') return;
+    clearTimeout(libraryScrollTimer);
+    libraryScrollTimer = setTimeout(syncFocusFromScroll, 80);
+  });
+}
+
+function syncFocusFromScroll(){
+  const grid = $('layoutGrid');
+  if(!grid || state.libraryViewMode !== 'list') return;
+  const rows = [...grid.querySelectorAll('.libraryRow[data-lib-key]')];
+  if(!rows.length) return;
+  const top = grid.getBoundingClientRect().top + 28;
+  let best = null;
+  let bestDist = Infinity;
+  rows.forEach(row => {
+    const dist = Math.abs(row.getBoundingClientRect().top - top);
+    if(dist < bestDist){ bestDist = dist; best = row; }
+  });
+  if(best){
+    const key = best.dataset.libKey;
+    if(key && key !== state.libraryFocusKey) focusLibraryItem(key, { scroll: false });
+  }
+}
+
+function enqueuePreview(task){
+  previewWait.push(task);
+  drainPreviewQueue();
+}
+function drainPreviewQueue(){
+  while(previewActive < PREVIEW_MAX && previewWait.length){
+    const task = previewWait.shift();
+    previewActive += 1;
+    Promise.resolve()
+      .then(task)
+      .catch(() => {})
+      .finally(() => { previewActive -= 1; drainPreviewQueue(); });
+  }
+}
+
+function observeGridPreviews(grid){
+  if(state.libraryViewMode !== 'grid') return;
+  const nodes = grid.querySelectorAll('.previewBox[data-preview-pending="1"]');
+  if(!nodes.length) return;
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if(!entry.isIntersecting) return;
+      const box = entry.target;
+      io.unobserve(box);
+      const raw = box.dataset.previewItem;
+      if(!raw) return;
+      box.dataset.previewPending = '0';
+      let item;
+      try{ item = JSON.parse(raw); } catch { return; }
+      enqueuePreview(() => loadPreviewInto(box, item, { persist: true }));
+    });
+  }, { root: grid, rootMargin: '120px', threshold: 0.01 });
+  nodes.forEach(n => io.observe(n));
+}
+
+function renderLibraryGrid(){
+  const grid = $('layoutGrid');
+  if(!grid) return;
+  bindLibraryListScroll();
+  syncLibraryViewChrome();
+  updateBulkExportButton();
+  const items = visibleLibraryItems();
+  const listMode = state.libraryViewMode === 'list';
+  grid.classList.toggle('libraryList', listMode);
+  grid.classList.toggle('layoutGrid', !listMode);
+
+  if(!items.length){
+    const msg = !state.libraryFoldersReady
+      ? 'Caricamento cartelle…'
+      : (!state.libraryItemsReady ? 'Cartelle pronte — caricamento elementi…' : 'Nessun layout o asset trovato con questo filtro.');
+    grid.innerHTML = `<div class="emptyGrid">${msg}</div>`;
+    if(!state.libraryItemsReady && state.libraryFoldersReady && state.libraryFolders.length === 0){
+      /* still loading items in empty-looking folder */
+    }
+    return;
+  }
+
+  grid.innerHTML = '';
+  items.forEach(item => {
+    if(listMode) grid.appendChild(buildLibraryRow(item));
+    else grid.appendChild(buildLibraryCard(item));
+  });
+  if(listMode) ensureLibraryFocus();
+  else observeGridPreviews(grid);
+}
+
+function buildLibraryRow(item){
+  const key = libraryItemKey(item);
+  const row = document.createElement('div');
+  row.className = 'libraryRow' + (key === state.libraryFocusKey ? ' focused' : '') + (item.kind === 'folder' ? ' folderRow' : '') + (isLibrarySelected(item.path) ? ' selectedForExport' : '');
+  row.dataset.libKey = key;
+  if(item.path) row.dataset.path = item.path;
+
+  const check = document.createElement('label');
+  check.className = 'libraryRowCheck';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = item.kind === 'layout' && isLibrarySelected(item.path);
+  cb.disabled = item.kind !== 'layout';
+  cb.addEventListener('click', ev => ev.stopPropagation());
+  cb.addEventListener('change', () => {
+    setLibrarySelected(item.path, cb.checked);
+    row.classList.toggle('selectedForExport', cb.checked);
+  });
+  check.appendChild(cb);
+
+  const title = document.createElement('div');
+  title.className = 'libraryRowTitle';
+  const badge = item.kind === 'folder' ? 'Cartella' : (item.kind === 'image' ? (item.has_layout ? 'Img+JSON' : 'Immagine') : 'Layout');
+  title.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${escapeHtml(item.rel || item.name)}</small>`;
+
+  const openBtn = document.createElement('button');
+  openBtn.className = 'libraryRowOpen';
+  openBtn.textContent = item.kind === 'folder' ? 'Apri' : (item.kind === 'image' ? (item.has_layout ? 'Apri' : 'Crea') : 'Apri');
+  openBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    if(item.kind === 'folder') goLibraryFolder(item.rel || item.path || item.name);
+    else openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
+  });
+
+  row.append(check, title, openBtn);
+  row.onclick = () => focusLibraryItem(key, { scroll: false });
+  row.ondblclick = () => {
+    if(item.kind === 'folder') goLibraryFolder(item.rel || item.path || item.name);
+    else openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
+  };
+  return row;
+}
+
+function buildLibraryCard(item){
+  if(item.kind === 'folder'){
+    const card = document.createElement('div');
+    card.className = 'layoutCard folderCard';
+    card.dataset.libKey = libraryItemKey(item);
+    const preview = document.createElement('div');
+    preview.className = 'previewBox folderPreview';
+    preview.innerHTML = '<div class="folderIcon">📁</div>';
+    const info = document.createElement('div');
+    info.className = 'layoutInfo';
+    info.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>Cartella progetto · ${escapeHtml(item.rel || item.name)}</small>`;
+    const actions = document.createElement('div');
+    actions.className = 'layoutActions';
+    const openBtn = document.createElement('button');
+    openBtn.textContent = 'Apri cartella';
+    actions.append(openBtn);
+    card.append(preview, info, actions);
+    const openFolder = () => goLibraryFolder(item.rel || item.path || item.name);
+    preview.onclick = openFolder;
+    card.ondblclick = openFolder;
+    openBtn.onclick = openFolder;
+    return card;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'layoutCard' + (isLibrarySelected(item.path) ? ' selectedForExport' : '');
+  card.dataset.libKey = libraryItemKey(item);
+  const preview = document.createElement('div');
+  preview.className = 'previewBox';
+  preview.dataset.previewPending = '1';
+  preview.dataset.previewItem = JSON.stringify({
+    kind: item.kind, path: item.path, name: item.name, preview_src: item.preview_src || null,
+  });
+  preview.innerHTML = '<small class="muted">Anteprima…</small>';
+
+  const checkboxWrap = document.createElement('label');
+  checkboxWrap.className = 'librarySelect';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = isLibrarySelected(item.path);
+  checkbox.disabled = item.kind !== 'layout';
+  const checkboxText = document.createElement('span');
+  checkboxText.className = 'librarySelectText';
+  checkboxText.textContent = checkbox.checked ? 'Selezionato' : 'Seleziona';
+  checkbox.addEventListener('click', ev => ev.stopPropagation());
+  checkboxWrap.addEventListener('click', ev => ev.stopPropagation());
+  checkbox.addEventListener('change', ev => {
+    setLibrarySelected(item.path, ev.target.checked);
+    card.classList.toggle('selectedForExport', ev.target.checked);
+    checkboxText.textContent = ev.target.checked ? 'Selezionato' : 'Seleziona';
+  });
+  checkboxWrap.append(checkbox, checkboxText);
+
+  const info = document.createElement('div');
+  info.className = 'layoutInfo';
+  const badge = item.kind === 'image' ? (item.has_layout ? 'Immagine + layout' : 'Immagine') : 'Layout';
+  const actionLabel = item.kind === 'image' ? (item.has_layout ? 'Apri layout' : 'Crea layout') : 'Apri';
+  info.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${escapeHtml(item.rel)}</small><small>${item.mtime_iso || ''}</small>`;
+  const actions = document.createElement('div');
+  actions.className = 'layoutActions';
+  const openBtn = document.createElement('button');
+  openBtn.textContent = actionLabel;
+  const delBtn = document.createElement('button');
+  delBtn.textContent = 'Cancella';
+  delBtn.className = 'danger';
+  if(item.kind !== 'layout'){ delBtn.disabled = true; delBtn.title = 'Solo .layout.json'; }
+  actions.append(openBtn, delBtn);
+  card.append(preview, checkboxWrap, info, actions);
+
+  const open = () => openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
+  preview.onclick = () => {
+    if(item.kind === 'layout'){
+      const next = !isLibrarySelected(item.path);
+      checkbox.checked = next;
+      setLibrarySelected(item.path, next);
+      checkboxText.textContent = next ? 'Selezionato' : 'Seleziona';
+      card.classList.toggle('selectedForExport', next);
+    }
+  };
+  card.ondblclick = open;
+  openBtn.onclick = open;
+  delBtn.onclick = () => deleteLibraryLayout(item);
+  return card;
+}
+
+async function openLibraryItem(item){
+  if(item.kind === 'image'){
+    if(item.has_layout && item.layout_path) return loadLayoutUrl(item.layout_path);
+    const res = await fetch('/api/create-layout-from-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: item.path }),
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'Create layout failed');
+    loadLayoutObject(data.layout, data.path);
+    return;
+  }
+  return loadLayoutUrl(item.path);
+}
+
+function mountPreviewNode(box, node){
+  [...box.childNodes].forEach(n => {
+    if(!n.classList || (!n.classList.contains('librarySelect') && !n.classList.contains('libraryRowCheck'))) n.remove();
+  });
+  box.appendChild(node);
+}
+
+async function loadPreviewInto(box, item, opts = {}){
+  const stillWanted = () => !opts.expectKey || state.libraryFocusKey === opts.expectKey;
+  try{
+    if(item.kind === 'image'){
+      if(!stillWanted()) return;
+      const img = document.createElement('img');
+      img.src = item.preview_src || ('/api/file?path=' + encodeURIComponent(item.path));
+      img.alt = item.name || '';
+      img.loading = 'lazy';
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+      img.style.objectFit = 'contain';
+      mountPreviewNode(box, img);
+      return;
+    }
+    if(item.preview_src){
+      if(!stillWanted()) return;
+      const img = document.createElement('img');
+      img.src = item.preview_src + (item.preview_src.includes('?') ? '&' : '?') + 'v=' + (item.mtime || Date.now());
+      img.alt = item.name || '';
+      img.loading = 'lazy';
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+      img.style.objectFit = 'contain';
+      mountPreviewNode(box, img);
+      return;
+    }
+    let layout;
+    if(String(item.path || '').startsWith('./')){
+      const res = await fetch(item.path, { cache: 'no-store' });
+      layout = await res.json();
+    } else {
+      const res = await fetch('/api/load-layout?path=' + encodeURIComponent(item.path), { cache: 'no-store' });
+      const payload = await res.json();
+      layout = payload.layout;
+    }
+    if(!stillWanted()) return;
+    const c = document.createElement('canvas');
+    const w = layout.canvas?.width || 1080;
+    const h = layout.canvas?.height || 1350;
+    const maxW = 420, maxH = 520;
+    const scale = Math.min(maxW / w, maxH / h);
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
+    const ctx = c.getContext('2d');
+    ctx.scale(scale, scale);
+    await renderLayoutToCanvas(ctx, layout, w, h);
+    if(!stillWanted()) return;
+    mountPreviewNode(box, c);
+    if(opts.persist && item.path && !String(item.path).startsWith('./')){
+      persistLayoutPreview(item.path, c).catch(() => {});
+    }
+  } catch(e){
+    if(stillWanted()) box.innerHTML = '<small class="muted">Preview non disponibile</small>';
+  }
+}
+
+async function persistLayoutPreview(path, canvas){
+  const blob = await canvasToBlob(canvas, 'image/jpeg', 0.72);
+  if(!blob) return;
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for(let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const image_base64 = btoa(bin);
+  await fetch('/api/save-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, image_base64 }),
+  });
+}
+
+async function uploadCurrentLayoutPreview(){
+  if(!state.currentLayoutPath) return;
+  try{
+    const layout = layoutPayload();
+    const c = document.createElement('canvas');
+    const w = layout.canvas?.width || 1080;
+    const h = layout.canvas?.height || 1350;
+    const scale = Math.min(420 / w, 520 / h);
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
+    const ctx = c.getContext('2d');
+    ctx.scale(scale, scale);
+    await renderLayoutToCanvas(ctx, layout, w, h);
+    await persistLayoutPreview(state.currentLayoutPath, c);
+  } catch(e){ /* non-blocking */ }
+}
+
+async function loadReadyLayouts(){ /* library loads only when modal opens */ }
+
+bindLibraryKeyboard();
+if(!window.ROBY_EXPORT_MODE) init();
