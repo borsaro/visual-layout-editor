@@ -53,14 +53,10 @@ function composeImageDomFilter(layer) {
 
 function syncImageAdjustProps(layer) {
   const v = normalizeImageAdjust(layer && layer.adjust);
-  const set = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val;
-  };
-  set('propBright', v.brightness);
-  set('propContrast', v.contrast);
-  set('propSaturate', v.saturate);
-  set('propVivid', v.vivid);
+  setVal('propBright', v.brightness);
+  setVal('propContrast', v.contrast);
+  setVal('propSaturate', v.saturate);
+  setVal('propVivid', v.vivid);
 }
 
 function readImageAdjustFromUi() {

@@ -3,7 +3,7 @@
 const INSPECTOR_SLIDERS = {
   propOpacity: [0, 1, 0.01],
   propRotation: [-180, 180, 1],
-  propLineHeight: [0.5, 3, 0.05],
+  propLineHeight: [0.5, 3, 0.01],
   propLetterSpacing: [-20, 100, 0.5],
   propStrokeWidth: [0, 100, 1],
   propRadius: [0, 500, 1],

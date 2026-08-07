@@ -83,10 +83,9 @@ function syncKeyBlackProps(layer) {
   const en = document.getElementById('propKeyBlackEnabled');
   if (en) en.checked = on;
   const p = layer.keyBlack || defaultKeyBlack();
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('propKeyColor', p.color || '#000000');
-  set('propKeyThreshold', Number(p.threshold) ?? 16);
-  set('propKeySoftness', Number(p.softness) ?? 40);
+  setVal('propKeyColor', p.color || '#000000');
+  setVal('propKeyThreshold', Number(p.threshold) ?? 16);
+  setVal('propKeySoftness', Number(p.softness) ?? 40);
 }
 
 function readKeyBlackFromUi() {

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
   <link rel="stylesheet" href="./styles.css?v=20260726-fontsize-slider" />
+  <link rel="stylesheet" href="./left-panel.css?v=20260726-accordion" />
   <link rel="stylesheet" href="./inspector.css?v=20260726-inspector-ui-2" />
 </head>
 <body>
@@ -39,38 +40,48 @@
 
   <main class="app">
     <aside class="panel left">
-      <h2>Canvas</h2>
-      <div class="row">
-        <label for="presetSelect">Preset</label>
-        <select id="presetSelect"></select>
-      </div>
-      <div class="grid2">
-        <label>W <input id="canvasW" type="number" value="1080"></label>
-        <label>H <input id="canvasH" type="number" value="1350"></label>
-      </div>
-      <button id="resizeCanvasBtn">Applica formato</button>
-      <label>Duplica verso
-        <select id="duplicateFormatSelect"></select>
-      </label>
-      <button id="duplicateFormatBtn" class="wide" title="Copia il layout nel formato scelto, ridimensionando canvas e livelli in proporzione">Duplica in questo formato</button>
-      <label>Sfondo <input id="canvasBg" type="color" value="#fff7ea"></label>
-      <label class="toggleRow"><input id="toggleSafeGuides" type="checkbox"> Guide safe zone (48px)</label>
-
-      <h2>Aggiungi</h2>
-      <button id="addTextBtn">+ Testo</button>
-      <button id="addRectBtn">+ Box</button>
-      <button id="addGradientBtn">+ Gradiente</button>
-      <label class="button wide">+ Immagine (file→base64)<input id="imageInput" type="file" accept="image/*" hidden></label>
-      <button id="addImagePathBtn" class="wide">+ Immagine (path)</button>
-
-      <h2>Layer</h2>
-      <p class="muted hint">Trascina ⋮⋮ per cambiare l’ordine (alto = davanti).</p>
-      <div id="layersList" class="layers"></div>
+      <section class="leftSection">
+        <button type="button" class="leftSectionTitle" aria-expanded="false">Canvas</button>
+        <div class="leftSectionContent">
+          <div class="row">
+            <label for="presetSelect">Preset</label>
+            <select id="presetSelect"></select>
+          </div>
+          <div class="grid2">
+            <label>W <input id="canvasW" type="number" value="1080"></label>
+            <label>H <input id="canvasH" type="number" value="1350"></label>
+          </div>
+          <button id="resizeCanvasBtn">Applica formato</button>
+          <label>Duplica verso
+            <select id="duplicateFormatSelect"></select>
+          </label>
+          <button id="duplicateFormatBtn" class="wide" title="Copia il layout nel formato scelto, ridimensionando canvas e livelli in proporzione">Duplica in questo formato</button>
+          <label>Sfondo <input id="canvasBg" type="color" value="#fff7ea"></label>
+          <label class="toggleRow"><input id="toggleSafeGuides" type="checkbox"> Guide safe zone (48px)</label>
+        </div>
+      </section>
+      <section class="leftSection">
+        <button type="button" class="leftSectionTitle" aria-expanded="false">Aggiungi</button>
+        <div class="leftSectionContent">
+          <button id="addTextBtn">+ Testo</button>
+          <button id="addRectBtn">+ Box</button>
+          <button id="addGradientBtn">+ Gradiente</button>
+          <label class="button wide">+ Immagine (file→base64)<input id="imageInput" type="file" accept="image/*" hidden></label>
+          <button id="addImagePathBtn" class="wide">+ Immagine (path)</button>
+        </div>
+      </section>
+      <section class="leftSection isOpen">
+        <button type="button" class="leftSectionTitle" aria-expanded="true">Layer</button>
+        <div class="leftSectionContent">
+          <p class="muted hint">Trascina ⋮⋮ per cambiare l’ordine (alto = davanti).</p>
+          <div id="layersList" class="layers"></div>
+        </div>
+      </section>
     </aside>
 
     <section class="stageWrap">
       <div class="stageToolbar">
-        <label>Zoom <input id="zoomRange" type="range" min="15" max="400" step="1" value="100"><span id="zoomLabel">100%</span></label>
+        <label>Zoom <input id="zoomRange" type="range" min="15" max="400" step="0.5" value="100"><span id="zoomLabel">100%</span></label>
         <span id="canvasInfo"></span>
       </div>
       <div class="stageScroller">
@@ -330,6 +341,7 @@
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
+  <script src="./left-panel.js?v=20260726-accordion"></script>
   <script src="./inspector-controls.js?v=20260726-inspector-ui-2"></script>
   <script src="./app.js?v=20260726-inspector-ui-2"></script>
   <script src="./library.js?v=20260726-library-toggle3"></script>

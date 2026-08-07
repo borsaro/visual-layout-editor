@@ -114,13 +114,12 @@ function syncEffectInputs(prefix, fx, defaults) {
   const src = fx && fx.enabled !== false ? fx : defaults;
   const en = document.getElementById(prefix + 'Enabled');
   if (en) en.checked = !!(fx && fx.enabled !== false);
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set(prefix + 'Color', effectToHex(src.color, defaults.color));
-  set(prefix + 'Blur', Number(src.blur) || defaults.blur || 0);
-  set(prefix + 'Opacity', src.opacity != null ? Number(src.opacity) : defaults.opacity);
+  setVal(prefix + 'Color', effectToHex(src.color, defaults.color));
+  setVal(prefix + 'Blur', Number(src.blur) || defaults.blur || 0);
+  setVal(prefix + 'Opacity', src.opacity != null ? Number(src.opacity) : defaults.opacity);
   if (prefix === 'propShadow') {
-    set(prefix + 'OffsetX', Number(src.offsetX) || 0);
-    set(prefix + 'OffsetY', Number(src.offsetY) || 0);
+    setVal(prefix + 'OffsetX', Number(src.offsetX) || 0);
+    setVal(prefix + 'OffsetY', Number(src.offsetY) || 0);
   }
 }
 

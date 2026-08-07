@@ -1586,17 +1586,27 @@ function init(){
     clearLayerSelection();
   });
   const syncZoomUi = ()=>{
-    const z = Math.round(Number(state.zoom) || 100);
+    const z = Math.round((Number(state.zoom) || 100) * 2) / 2;
     const range = $('zoomRange');
     if(range) range.value = z;
     const label = $('zoomLabel');
-    if(label) label.textContent = z + '%';
+    if(label) label.textContent = (Number.isInteger(z) ? z : z.toFixed(1)) + '%';
   };
   $('zoomRange').oninput=()=>{
     state.zoom = Number($('zoomRange').value);
     syncZoomUi();
     render({ skipProps: true });
   };
+  document.querySelector('.stageScroller')?.addEventListener('wheel', (ev)=>{
+    if(!ev.metaKey) return;
+    ev.preventDefault();
+    const range = $('zoomRange');
+    const min = Number(range.min);
+    const max = Number(range.max);
+    state.zoom = Math.max(min, Math.min(max, state.zoom + (ev.deltaY < 0 ? 0.5 : -0.5)));
+    syncZoomUi();
+    render({ skipProps: true });
+  }, { passive: false });
   syncZoomUi();
   $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); markDirty(); render();};

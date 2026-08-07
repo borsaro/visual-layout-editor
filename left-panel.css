@@ -1,0 +1,14 @@
+body{display:grid;grid-template-rows:auto minmax(0,1fr)}
+.app{height:auto!important;min-height:0;grid-template-rows:minmax(0,1fr)}
+.panel.left{height:auto!important;padding:0!important}
+.leftSection{display:contents}
+.leftSection:nth-child(1)>.leftSectionTitle{order:1}
+.leftSection:nth-child(2)>.leftSectionTitle{order:2}
+.leftSection:nth-child(3)>.leftSectionTitle{order:3}
+.leftSectionTitle{display:flex;align-items:center;justify-content:space-between;width:100%;height:44px;flex:0 0 44px;padding:0 14px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:#171a20;text-align:left;font-size:12px;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
+.leftSectionTitle:after{content:'⌄';color:var(--muted);font-size:14px}
+.leftSection.isOpen>.leftSectionTitle:after{content:'⌃'}
+.leftSectionContent{display:none;order:4;min-height:0;padding:12px;overflow-y:auto}
+.leftSection.isOpen>.leftSectionContent{display:flex;flex:1 1 auto;flex-direction:column;gap:10px}
+.leftSectionContent>.row,.leftSectionContent>.grid2,.leftSectionContent>.toggleRow{margin:0}
+.leftSectionContent>.layers{flex:1 1 auto!important;min-height:0!important}

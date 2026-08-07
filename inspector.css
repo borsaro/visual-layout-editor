@@ -31,14 +31,15 @@
 .panel.right input:focus-visible,.panel.right select:focus-visible,.panel.right textarea:focus-visible,.panel.right button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
 .panel.right input[type=color]{width:100%;height:32px;padding:3px;cursor:pointer}
 .panel.right input[type=checkbox]{accent-color:var(--blue)}
-.panel.right .grid2{gap:7px;margin:0}
+.panel.right .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px;margin:0}
+.panel.right .grid2>label{min-width:0}
 .compactGrid{margin-bottom:0!important}
 .layerStateRow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .layerStateRow .toggleRow{min-height:32px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#111318}
 
-.quickValue,.fontSizeRow{display:flex!important;align-items:center;gap:7px;width:100%}
-.quickValue>input[type=number],.fontSizeRow>input[type=number]{width:62px!important;flex:0 0 62px}
-.quickRange,.fontSizeRow>input[type=range]{flex:1;min-width:40px!important;height:18px;padding:0!important;border:0!important;background:transparent!important;accent-color:var(--blue)}
+.quickValue,.fontSizeRow{display:flex!important;flex-direction:column;align-items:stretch;gap:4px;width:100%;min-width:0}
+.quickValue>input[type=number],.fontSizeRow>input[type=number]{width:100%!important;flex:none}
+.quickRange,.fontSizeRow>input[type=range]{width:100%;min-width:0!important;height:18px;padding:0!important;border:0!important;background:transparent!important;accent-color:var(--blue)}
 .quickRange::-webkit-slider-thumb,.fontSizeRow>input[type=range]::-webkit-slider-thumb{cursor:ew-resize}
 
 .segmentedSource{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none}

@@ -342,6 +342,13 @@ function bindLibraryKeyboard(){
   });
 }
 
+function bindLibraryBackdrop(){
+  const modal = $('layoutLibraryModal');
+  modal?.addEventListener('click', (ev) => {
+    if(ev.target === modal) closeLayoutLibrary();
+  });
+}
+
 function copyPathLine(item){
   const line = document.createElement('small');
   line.className = 'libraryPathCopy';
@@ -841,4 +848,5 @@ async function uploadCurrentLayoutPreview(){
 async function loadReadyLayouts(){ /* library loads only when modal opens */ }
 
 bindLibraryKeyboard();
+bindLibraryBackdrop();
 if(!window.ROBY_EXPORT_MODE) init();
