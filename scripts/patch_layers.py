@@ -6,6 +6,7 @@ from typing import Any
 
 ALLOWED_PATCH_KEYS = {
     'locked', 'visible', 'name', 'x', 'y', 'w', 'h', 'z', 'opacity', 'rotation',
+    'skewX', 'skewY',
     'blendMode', 'src', 'fit', 'text', 'fontSize', 'fontWeight', 'fontFamily',
     'fontStyle', 'color', 'align', 'vAlign', 'lineHeight', 'letterSpacing',
     'textTransform', 'fill', 'stroke', 'strokeWidth', 'radius',

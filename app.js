@@ -210,7 +210,7 @@ function renderLayer(layer) {
   Object.assign(el.style, {
     left: layer.x + 'px', top: layer.y + 'px', width: layer.w + 'px', height: layer.h + 'px',
     zIndex: layer.z || 1, opacity: layer.opacity ?? 1,
-    transform: `rotate(${Number(layer.rotation)||0}deg)`, transformOrigin: 'center center',
+    transform: `rotate(${Number(layer.rotation)||0}deg) skew(${Number(layer.skewX)||0}deg, ${Number(layer.skewY)||0}deg)`, transformOrigin: 'center center',
   });
   applyBlendDom(el, layer);
   if (layer.type === 'text') {
@@ -407,7 +407,7 @@ function renderLayerList(){
 const PROP_RULES = {
   z:{scope:'single'}, name:{scope:'single'},
   text:{scope:'single',types:['text']}, src:{scope:'single',types:['image']},
-  x:{}, y:{}, w:{}, h:{}, rotation:{}, opacity:{}, blendMode:{}, visible:{}, locked:{},
+  x:{}, y:{}, w:{}, h:{}, rotation:{}, skewX:{}, skewY:{}, opacity:{}, blendMode:{}, visible:{}, locked:{},
   shadow:{types:['text','image','rect','gradient']},
   fontSize:{types:['text']}, fontWeight:{types:['text']}, fontFamily:{types:['text']},
   fontStyle:{types:['text']}, underline:{types:['text']}, strikethrough:{types:['text']},
@@ -460,6 +460,8 @@ function renderProps(){
   setVal('propZ', primary.z || 1);
   setVal('propOpacity', primary.opacity ?? 1);
   setVal('propRotation', primary.rotation || 0);
+  setVal('propSkewX', primary.skewX || 0);
+  setVal('propSkewY', primary.skewY || 0);
   populateBlendSelect($('propBlendMode'), primary.blendMode);
   const vis = $('propVisible'); if(vis) vis.checked = layerVisible(primary);
   const lockEl = $('propLocked'); if(lockEl) lockEl.checked = layerLocked(primary);
@@ -814,7 +816,7 @@ function fontInfoString(l){
 }
 
 function bindProps(){
-  const numeric=['X','Y','W','H','Z','Opacity','Rotation','FontSize','LineHeight','LetterSpacing','StrokeWidth','Radius'];
+  const numeric=['X','Y','W','H','Z','Opacity','Rotation','SkewX','SkewY','FontSize','LineHeight','LetterSpacing','StrokeWidth','Radius'];
   numeric.forEach(k=>{
     const id='prop'+k; const el=$(id); if(!el) return;
     const key=k.charAt(0).toLowerCase()+k.slice(1);
@@ -1110,7 +1112,14 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
     ctx.save(); ctx.globalAlpha=l.opacity ?? 1;
     applyBlendCanvas(ctx, l);
     const rot=(Number(l.rotation)||0)*Math.PI/180;
-    if(rot){ ctx.translate(l.x+l.w/2,l.y+l.h/2); ctx.rotate(rot); ctx.translate(-(l.x+l.w/2),-(l.y+l.h/2)); }
+    const skx=(Number(l.skewX)||0)*Math.PI/180, sky=(Number(l.skewY)||0)*Math.PI/180;
+    if(rot||skx||sky){
+      // Same order as DOM: rotate(...) skew(...) with origin at layer center
+      ctx.translate(l.x+l.w/2,l.y+l.h/2);
+      if(rot) ctx.rotate(rot);
+      if(skx||sky) ctx.transform(1, Math.tan(sky), Math.tan(skx), 1, 0, 0);
+      ctx.translate(-(l.x+l.w/2),-(l.y+l.h/2));
+    }
     if(l.type==='rect') drawRoundRect(ctx,l.x,l.y,l.w,l.h,l.radius||0,l.fill,l.stroke,l.strokeWidth||0,l);
     if(l.type==='text') drawCanvasText(ctx,l);
     if(l.type==='image') await drawCanvasImage(ctx,l);
