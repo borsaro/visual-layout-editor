@@ -1,7 +1,7 @@
 /* Contextual property inspector */
 .app{grid-template-columns:280px minmax(0,1fr) 360px}
 .panel.right{padding:0;overflow-x:hidden;background:#14171c}
-.panel.right [hidden],#props[hidden],#textProps[hidden],#boxProps[hidden],#imageProps[hidden],#gradientProps[hidden],#effectProps[hidden],#glowProps[hidden]{display:none!important}
+.panel.right [hidden],#props[hidden],#textProps[hidden],#boxProps[hidden],#imageProps[hidden],#gradientProps[hidden],#shapeProps[hidden],#effectProps[hidden],#glowProps[hidden]{display:none!important}
 
 .inspectorHeader{position:sticky;top:0;z-index:12;display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 12px;border-bottom:1px solid var(--line);background:#171a20}
 .inspectorHeader h2{margin:0;font-size:13px;letter-spacing:.04em}
@@ -11,7 +11,7 @@
 #props{display:flex;flex-direction:column;gap:8px;padding:10px}
 #selectionProps{order:1}
 #transformProps{order:2}
-#textProps,#boxProps,#imageProps,#gradientProps{order:3}
+#textProps,#boxProps,#imageProps,#gradientProps,#shapeProps{order:3}
 #effectProps{order:4}
 .arrangeSection{order:5}
 .propActions{order:6}

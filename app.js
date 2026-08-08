@@ -16,6 +16,7 @@ const state = {
   loadedJsonFilename: null,
   localFileHandle: null, // File System Access API handle (Carica JSON → Salva Json)
   showSafeGuides: localStorage.getItem('robyShowSafeGuides') === '1',
+  vertexEditId: null, // shape layer currently in per-vertex warp mode
   campaignsRoot: '',
   editorRoot: '',
 };
@@ -117,12 +118,13 @@ function restoreSnapshot(snap){ const data=JSON.parse(snap); state.canvas=data.c
 function pushHistory(){ const snap=snapshot(); if(state.history.at(-1)!==snap){ state.history.push(snap); if(state.history.length>120) state.history.shift(); } state.future=[]; }
 function undo(){ if(!state.history.length) return; const current=snapshot(); const prev=state.history.pop(); state.future.push(current); restoreSnapshot(prev); }
 function redo(){ if(!state.future.length) return; const current=snapshot(); const next=state.future.pop(); state.history.push(current); restoreSnapshot(next); }
-function selectOnly(id){ state.selectedId=id; state.selectedIds=id?[id]:[]; }
+function selectOnly(id){ if(state.vertexEditId && state.vertexEditId!==id) state.vertexEditId=null; state.selectedId=id; state.selectedIds=id?[id]:[]; }
 function toggleSelect(id){ if(isSelected(id)){ state.selectedIds=state.selectedIds.filter(x=>x!==id); state.selectedId=state.selectedIds.at(-1)||null; } else { state.selectedIds.push(id); state.selectedId=id; } }
 function clearLayerSelection(){
   if(!state.selectedId && !state.selectedIds.length) return;
   state.selectedId = null;
   state.selectedIds = [];
+  state.vertexEditId = null;
   render();
 }
 function isSelectionModifier(ev){
@@ -173,6 +175,7 @@ function render(opts = {}) {
     renderLayerList();
     renderProps();
   }
+  if(typeof publishLiveState === 'function') publishLiveState();
 }
 
 /** Replace one layer node on stage without rebuilding the props panel / font <select>. */
@@ -288,8 +291,17 @@ function renderLayer(layer) {
       borderRadius: (layer.radius || 0) + 'px',
     });
     applyLayerEffectsDom(el, layer);
+  } else if (layer.type === 'shape') {
+    el.appendChild(shapeSvgEl(layer));
+    applyLayerEffectsDom(el, layer);
+    el.addEventListener('dblclick', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); startVertexEdit(layer.id); });
   }
-  if(!layerLocked(layer)){
+  const editingVertices = vertexEditActive(layer) && isSelected(layer.id) && !layerLocked(layer);
+  if(editingVertices){
+    el.classList.add('vertexEditing');
+    appendVertexHandles(el, layer);
+  }
+  if(!layerLocked(layer) && !editingVertices){
     ['nw','ne','sw','se'].forEach(pos=>{
       const handle = document.createElement('div');
       handle.className = `resizeHandle handle-${pos}`;
@@ -408,16 +420,18 @@ const PROP_RULES = {
   z:{scope:'single'}, name:{scope:'single'},
   text:{scope:'single',types:['text']}, src:{scope:'single',types:['image']},
   x:{}, y:{}, w:{}, h:{}, rotation:{}, skewX:{}, skewY:{}, opacity:{}, blendMode:{}, visible:{}, locked:{},
-  shadow:{types:['text','image','rect','gradient']},
+  shadow:{types:['text','image','rect','gradient','shape']},
+  shapeKind:{types:['shape']}, sides:{types:['shape']}, corner:{types:['shape']},
+  fillEnabled:{types:['shape']}, points:{scope:'single',types:['shape']},
   fontSize:{types:['text']}, fontWeight:{types:['text']}, fontFamily:{types:['text']},
   fontStyle:{types:['text']}, underline:{types:['text']}, strikethrough:{types:['text']},
   textTransform:{types:['text']}, letterSpacing:{types:['text']}, color:{types:['text']},
   align:{types:['text']}, vAlign:{types:['text']}, lineHeight:{types:['text']}, glow:{types:['text']},
-  fill:{types:['rect']}, stroke:{types:['rect']}, strokeWidth:{types:['rect']}, radius:{types:['rect']},
+  fill:{types:['rect','shape']}, stroke:{types:['rect','shape']}, strokeWidth:{types:['rect','shape']}, radius:{types:['rect']},
   fit:{types:['image']}, adjust:{types:['image']}, keyBlack:{types:['image']},
   gradientType:{types:['gradient']}, angle:{types:['gradient']}, stops:{types:['gradient']},
 };
-const PROP_OBJECT_KEYS = new Set(['shadow','glow','adjust','keyBlack','stops']);
+const PROP_OBJECT_KEYS = new Set(['shadow','glow','adjust','keyBlack','stops','points']);
 
 function targetLayersForKey(key){
   const rule = PROP_RULES[key] || {};
@@ -468,6 +482,7 @@ function renderProps(){
 
   $('textProps').hidden = !has('text');
   $('boxProps').hidden = !has('rect');
+  const shapeProps = $('shapeProps'); if(shapeProps) shapeProps.hidden = !has('shape');
   $('imageProps').hidden = !has('image');
   const gradProps = $('gradientProps'); if(gradProps) gradProps.hidden = !has('gradient');
   const alignObjects = $('alignObjectsProps'); if(alignObjects) alignObjects.hidden = sel.length < 2;
@@ -513,11 +528,14 @@ function renderProps(){
   const gradL = repr('gradient');
   if(gradL) syncGradientProps(gradL);
 
+  const shapeL = repr('shape');
+  if(shapeL) syncShapeProps(shapeL);
+
   const fxBox = $('effectProps');
-  if(fxBox) fxBox.hidden = !(has('text') || has('image') || has('rect') || has('gradient'));
+  if(fxBox) fxBox.hidden = !(has('text') || has('image') || has('rect') || has('gradient') || has('shape'));
   const glowBox = $('glowProps');
   if(glowBox) glowBox.hidden = !has('text');
-  const shadowSrc = has('text') ? (textL || primary) : (imageL || rectL || gradL || primary);
+  const shadowSrc = has('text') ? (textL || primary) : (imageL || rectL || gradL || shapeL || primary);
   syncEffectInputs('propShadow', shadowSrc.shadow, defaultShadow());
   if(textL) syncEffectInputs('propGlow', textL.glow, defaultGlow());
 }
@@ -886,6 +904,7 @@ function bindProps(){
   };
   bindEffect('propShadow', 'shadow', true);
   bindEffect('propGlow', 'glow', false);
+  bindShapeProps();
   document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
     btn.onclick=()=>{
       const key=btn.dataset.styleToggle;
@@ -1124,6 +1143,7 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
     if(l.type==='text') drawCanvasText(ctx,l);
     if(l.type==='image') await drawCanvasImage(ctx,l);
     if(l.type==='gradient') drawCanvasGradient(ctx,l);
+    if(l.type==='shape') drawCanvasShape(ctx,l);
     ctx.restore();
   }
 }
@@ -1493,7 +1513,7 @@ function bindKeyboardShortcuts(){
     if(!ev.target?.closest?.('.layerContextMenu')) hideLayerContextMenu();
   }, true);
   document.addEventListener('keydown', (ev)=>{
-    if(ev.key === 'Escape') hideLayerContextMenu();
+    if(ev.key === 'Escape'){ hideLayerContextMenu(); stopVertexEdit(); }
     const mod = ev.metaKey || ev.ctrlKey;
     const key = ev.key.toLowerCase();
     // Undo/redo before typing-target guard so panel focus (font select, inputs) still works
@@ -1620,6 +1640,7 @@ function init(){
   $('addTextBtn').onclick=()=>{pushHistory(); state.layers.push(defaultText()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addRectBtn').onclick=()=>{pushHistory(); state.layers.push(defaultRect()); selectOnly(state.layers.at(-1).id); markDirty(); render();};
   $('addGradientBtn')?.addEventListener('click', ()=>{ pushHistory(); state.layers.push(defaultGradient()); selectOnly(state.layers.at(-1).id); markDirty(); render(); });
+  $('addShapeBtn')?.addEventListener('click', ()=>{ pushHistory(); state.layers.push(defaultShape($('newShapeKind')?.value || 'rect')); selectOnly(state.layers.at(-1).id); markDirty(); render(); });
   $('addImagePathBtn')?.addEventListener('click', addImageByPath);
   $('imageInput').onchange=e=>{ if(e.target.files[0]) readImageFile(e.target.files[0]); e.target.value=''; };
   $('openJsonBtn')?.addEventListener('click', ()=>openLocalJson());
@@ -1666,6 +1687,7 @@ function init(){
   $('reloadBtn').onclick=()=>reloadCurrentLayout();
   $('newBtn').onclick=()=>{ if(!confirmDiscardChanges()) return; if(confirm('Creare un nuovo layout vuoto?')){ pushHistory(); state.layers=[]; state.selectedId=null; state.selectedIds=[]; state.currentLayoutPath=null; state.loadedJsonFilename=null; clearLocalFileHandle(); clearDirty(); render(); }};
   initInspectorControls?.();
+  if(typeof initLiveBridge === 'function') initLiveBridge();
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
   loadServerHealth().finally(()=>{
     render();

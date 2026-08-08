@@ -67,7 +67,7 @@ function applyLayerEffectsDom(el, layer) {
     el.style.textShadow = '';
     return;
   }
-  if (layer.type === 'rect' || layer.type === 'gradient') {
+  if (layer.type === 'rect' || layer.type === 'gradient' || layer.type === 'shape') {
     const s = shadowCss(layer.shadow);
     el.style.filter = s ? `drop-shadow(${s})` : '';
     el.style.textShadow = '';

@@ -441,6 +441,18 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 from host_fonts import fonts_payload
                 self._json(200, fonts_payload())
                 return
+            if parsed.path == '/api/live/state':
+                from live_session import SESSION
+                state = SESSION.get_state()
+                self._json(200, {
+                    'ok': True,
+                    'connected': SESSION.client_count() > 0,
+                    'state': state,
+                })
+                return
+            if parsed.path == '/api/live/stream':
+                self._serve_live_stream()
+                return
             if parsed.path == '/api/font-file':
                 from host_fonts import resolve_font_file
                 q = parse_qs(parsed.query)
@@ -460,6 +472,34 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def _serve_live_stream(self):
+        """Long-lived SSE response. ThreadingHTTPServer gives each client its own thread."""
+        from live_session import HEARTBEAT_SECONDS, SESSION, sse_frame, sse_heartbeat
+        import queue as _queue
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Connection', 'keep-alive')
+        self.send_header('X-Accel-Buffering', 'no')
+        self.end_headers()
+
+        sub = SESSION.subscribe()
+        try:
+            self.wfile.write(sse_frame('hello', {'clients': SESSION.client_count()}))
+            self.wfile.flush()
+            while True:
+                try:
+                    event, data = sub.get(timeout=HEARTBEAT_SECONDS)
+                    self.wfile.write(sse_frame(event, data))
+                except _queue.Empty:
+                    self.wfile.write(sse_heartbeat())
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            SESSION.unsubscribe(sub)
+
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path not in [
@@ -471,6 +511,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/export',
             '/api/patch-layers',
             '/api/save-preview',
+            '/api/live/state',
+            '/api/live/patch',
         ]:
             self.send_error(404, 'Unknown API endpoint')
             return
@@ -527,6 +569,33 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     layout = make_layout_from_image(image_path)
                     target.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding='utf-8')
                 self._json(200, {'ok': True, 'path': public_path(target), 'layout': layout, 'created': True})
+                return
+
+            if parsed.path == '/api/live/state':
+                from live_session import SESSION
+                SESSION.set_state({
+                    'path': payload.get('path'),
+                    'canvas': payload.get('canvas'),
+                    'layers': payload.get('layers') or [],
+                    'selectedIds': payload.get('selectedIds') or [],
+                    'dirty': bool(payload.get('dirty')),
+                })
+                self._json(200, {'ok': True})
+                return
+
+            if parsed.path == '/api/live/patch':
+                from live_session import SESSION, build_live_ops
+                ops = build_live_ops(payload)
+                delivered = SESSION.broadcast('patch', {
+                    **ops,
+                    'autosave': payload.get('autosave', True),
+                    'label': payload.get('label') or 'agent',
+                })
+                self._json(200 if delivered else 409, {
+                    'ok': bool(delivered),
+                    'delivered_to': delivered,
+                    'error': None if delivered else 'No editor connected. Open the editor, or use /api/patch-layers to edit the file directly.',
+                })
                 return
 
             if parsed.path == '/api/patch-layers':

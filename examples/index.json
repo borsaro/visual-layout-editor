@@ -1,5 +1,9 @@
 [
   {
+    "name": "Riferimento funzionalità — shape, skew, gradient, glow",
+    "path": "./examples/feature-reference.layout.json"
+  },
+  {
     "name": "LiveOak Vulcano — 02 confronto tre misure",
     "path": "./examples/liveoak-vulcano-production-fix/02_feed_confronto_tre_misure.layout.json"
   },

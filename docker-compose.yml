@@ -32,3 +32,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # MCP over HTTP: gli LLM si collegano a http://<host>:8766/mcp, nessuna installazione locale.
+  roby-layout-mcp:
+    build:
+      context: .
+    image: roby-visual-layout-editor:latest
+    container_name: roby-layout-mcp
+    restart: unless-stopped
+    depends_on:
+      - roby-visual-layout-editor
+    command: ["python", "mcp-server/server.py"]
+    ports:
+      - "${ROBY_LAYOUT_MCP_PORT:-8766}:8766"
+    environment:
+      ROBY_MCP_TRANSPORT: "streamable-http"
+      ROBY_MCP_HOST: "0.0.0.0"
+      ROBY_MCP_PORT: "8766"
+      # '*' disabilita la protezione DNS rebinding: serve per raggiungerlo da un host LAN qualsiasi
+      ROBY_MCP_ALLOWED_HOSTS: "${ROBY_LAYOUT_MCP_ALLOWED_HOSTS:-*}"
+      ROBY_EDITOR_URL: "http://roby-visual-layout-editor:8765"
+    volumes:
+      - .:/app

@@ -9,8 +9,10 @@ ALLOWED_PATCH_KEYS = {
     'skewX', 'skewY',
     'blendMode', 'src', 'fit', 'text', 'fontSize', 'fontWeight', 'fontFamily',
     'fontStyle', 'color', 'align', 'vAlign', 'lineHeight', 'letterSpacing',
-    'textTransform', 'fill', 'stroke', 'strokeWidth', 'radius',
-    'shadow', 'glow', 'keyBlack', 'adjust', 'gradientType', 'angle', 'stops',
+    'textTransform', 'underline', 'strikethrough',
+    'fill', 'stroke', 'strokeWidth', 'radius',
+    'shapeKind', 'sides', 'corner', 'fillEnabled', 'points',
+    'shadow', 'glow', 'keyBlack', 'adjust', 'crop', 'gradientType', 'angle', 'stops',
 }
 
 

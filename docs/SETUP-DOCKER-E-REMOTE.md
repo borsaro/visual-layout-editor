@@ -57,7 +57,9 @@ cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
 docker compose up -d --build
 ```
 
-L’immagine installa **Playwright + Chromium** per `POST /api/export` (PNG server-side). Serve un rebuild dopo cambi a `Dockerfile` / `requirements.txt`.
+L’immagine installa **Playwright + Chromium** per `POST /api/export` (PNG server-side). Serve un rebuild dopo cambi a `Dockerfile` / `requirements.txt` / `mcp-server/requirements.txt`.
+
+Il build va fatto **sulla macchina di destinazione** (Hermes). Compose alza due servizi dalla stessa immagine: editor su `8765` e MCP su `8766`. I client LLM non buildano nulla: si registrano solo con l’URL HTTP (`mcp-server/README.md`).
 
 ### Comandi utili
 
@@ -76,9 +78,10 @@ curl http://127.0.0.1:8765/api/health
 # → {"ok": true, "app": "roby-visual-layout-editor", "campaigns_root": "/campaigns", ...}
 
 curl 'http://127.0.0.1:8765/api/list-layouts?folder='
+docker compose ps   # devono risultare up: roby-visual-layout-editor e roby-layout-mcp
 ```
 
-Apri in locale: **http://127.0.0.1:8765**
+Apri in locale: **http://127.0.0.1:8765** — MCP: **http://127.0.0.1:8766/mcp**
 
 Nella topbar deve comparire `campaigns: /campaigns` (root montata nel container).
 

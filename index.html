@@ -6,7 +6,8 @@
   <title>Roby Visual Layout Editor</title>
   <link rel="stylesheet" href="./styles.css?v=20260726-fontsize-slider" />
   <link rel="stylesheet" href="./left-panel.css?v=20260726-accordion" />
-  <link rel="stylesheet" href="./inspector.css?v=20260726-inspector-ui-2" />
+  <link rel="stylesheet" href="./inspector.css?v=20260807-shapes" />
+  <link rel="stylesheet" href="./shapes.css?v=20260807-shapes" />
 </head>
 <body>
   <header class="topbar">
@@ -66,6 +67,20 @@
           <button id="addTextBtn">+ Testo</button>
           <button id="addRectBtn">+ Box</button>
           <button id="addGradientBtn">+ Gradiente</button>
+          <label class="wide">Forma
+            <select id="newShapeKind">
+              <option value="rect">Rettangolo</option>
+              <option value="ellipse">Ellisse / Cerchio</option>
+              <option value="triangle">Triangolo</option>
+              <option value="diamond">Rombo</option>
+              <option value="pentagon">Pentagono</option>
+              <option value="hexagon">Esagono</option>
+              <option value="octagon">Ottagono</option>
+              <option value="star">Stella</option>
+              <option value="polygon">Poligono N lati</option>
+            </select>
+          </label>
+          <button id="addShapeBtn" class="wide">+ Forma vettoriale</button>
           <label class="button wide">+ Immagine (file→base64)<input id="imageInput" type="file" accept="image/*" hidden></label>
           <button id="addImagePathBtn" class="wide">+ Immagine (path)</button>
         </div>
@@ -220,6 +235,35 @@
             <label>Raggio <input id="propRadius" type="number"></label>
           </div>
         </section>
+        <section id="shapeProps" class="inspectorSection" hidden>
+          <div class="inspectorSectionTitle"><span>Forma vettoriale</span></div>
+          <label>Tipo
+            <select id="propShapeKind">
+              <option value="rect">Rettangolo</option>
+              <option value="ellipse">Ellisse / Cerchio</option>
+              <option value="triangle">Triangolo</option>
+              <option value="diamond">Rombo</option>
+              <option value="pentagon">Pentagono</option>
+              <option value="hexagon">Esagono</option>
+              <option value="octagon">Ottagono</option>
+              <option value="star">Stella</option>
+              <option value="polygon">Poligono N lati</option>
+            </select>
+          </label>
+          <label id="shapeSidesField" hidden>Lati / punte <input id="propShapeSides" type="number" min="3" max="32" step="1" value="6"></label>
+          <label>Arrotondamento angoli <input id="propShapeCorner" type="number" min="0" step="1" value="0"></label>
+          <label class="toggleRow"><input id="propShapeFillEnabled" type="checkbox" checked> Riempimento attivo</label>
+          <div class="grid2">
+            <label>Riempimento <input id="propShapeFill" type="color" value="#eb0029"></label>
+            <label>Bordo <input id="propShapeStroke" type="color" value="#111111"></label>
+          </div>
+          <label>Spessore bordo <input id="propShapeStrokeWidth" type="number" min="0" step="1" value="0"></label>
+          <div class="shapeVertexActions">
+            <button type="button" id="shapeEditVerticesBtn">Modifica vertici</button>
+            <button type="button" id="shapeResetPointsBtn">Reset vertici</button>
+          </div>
+          <p id="shapeVertexHint" class="muted hint"></p>
+        </section>
         <section id="gradientProps" class="inspectorSection" hidden>
           <div class="inspectorSectionTitle"><span>Gradiente</span></div>
           <label>Tipo
@@ -338,16 +382,20 @@
   <script src="./fonts.js?v=20260721-host-fonts"></script>
   <script src="./format-presets.js?v=20260719-exportjpg"></script>
   <script src="./blend.js?v=20260719-blend"></script>
-  <script src="./effects.js?v=20260719-adjust"></script>
+  <script src="./effects.js?v=20260807-shapes"></script>
   <script src="./asset-src.js?v=20260719-assets"></script>
   <script src="./gradient.js?v=20260719-gradient"></script>
+  <script src="./shapes.js?v=20260807-shapes"></script>
+  <script src="./shape-editor.js?v=20260807-shapes"></script>
+  <script src="./shape-props.js?v=20260807-shapes"></script>
   <script src="./image-process.js?v=20260726-color-key"></script>
   <script src="./image-adjust.js?v=20260719-adjust"></script>
   <script src="./text-style.js?v=20260717-textwrap"></script>
   <script src="./text-layout.js?v=20260719-effects"></script>
   <script src="./left-panel.js?v=20260726-accordion"></script>
-  <script src="./inspector-controls.js?v=20260726-inspector-ui-2"></script>
-  <script src="./app.js?v=20260726-inspector-ui-2"></script>
+  <script src="./live-client.js?v=20260807-live"></script>
+  <script src="./inspector-controls.js?v=20260807-shapes"></script>
+  <script src="./app.js?v=20260807-shapes"></script>
   <script src="./library.js?v=20260726-library-toggle3"></script>
 </body>
 </html>

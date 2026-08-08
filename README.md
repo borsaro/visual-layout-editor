@@ -51,27 +51,60 @@ cd /Users/admin/Desktop/HermesRack/FRAMEWORK/visual-layout-editor
 python3 scripts/run_server.py
 ```
 
-## Funzioni v0
+## Funzioni
 
 - Canvas con formati preset: feed 1080x1350, story/reel 1080x1920, square 1080x1080, custom.
-- Layer di tipo:
-  - text
-  - image
-  - rect/box
-- Drag & drop su canvas.
-- Resize con maniglia in basso a destra.
-- Editing proprietà:
-  - x/y/w/h
-  - opacity
-  - z-index
-  - testo
-  - font size/weight/style
-  - colore testo/fill/bordo
-  - border radius
-  - object-fit: contain / cover / stretch
-- Import immagini come data URL, così l'export canvas non viene bloccato da CORS/local file.
-- Salva/carica `layout.json`.
-- Export PNG dal browser.
+- Layer di tipo `text`, `rect`, `image`, `gradient`, `shape`.
+- Drag & drop, resize con maniglia, lock e visibilità per layer.
+- Trasformazioni comuni: x/y/w/h, z, opacity, `rotation`, `skewX`/`skewY`, `blendMode`.
+  Lo skew è geometrico, quindi inclina anche i glifi di font senza corsivo.
+- Testo: font host (Font Book), size/weight/style, colore, allineamento H e V,
+  interlinea, tracking, `textTransform`, sottolineato, barrato, `glow`.
+- Forme (`shape`): preset rect, ellipse, triangle, diamond, pentagon, hexagon,
+  octagon, star, polygon; arrotondamento angoli, riempimento opzionale, bordo,
+  e warp dei vertici in stile Photoshop (doppio click sulla forma, oppure `points[]` nel JSON).
+- Immagini: fit contain/cover/stretch, crop, correzione colore, black key.
+- Gradienti lineari e radiali con stop e alpha.
+- Ombra su ogni layer, glow sul testo.
+- Salva/carica `.layout.json`, export PNG dal browser o server-side con Playwright.
+- Sessione live: un agente può modificare il layout aperto mentre lo guardi, con undo dall'editor.
+
+## Come si produce un layout
+
+Tre strade, stesso schema. Riferimento completo dei campi: **`docs/LAYOUT-SCHEMA.md`**
+(generato da `scripts/api_catalog.py` con `python3 scripts/gen_schema_doc.py`).
+
+### 1. JSON scritto a mano (metodo storico)
+
+L'agente scrive direttamente il `.layout.json` nella root campagne. Nessuna dipendenza,
+nessun server richiesto. È il percorso usato da Roby oggi e resta pienamente supportato.
+
+### 2. CLI
+
+```bash
+python3 scripts/layout_cli.py schema                 # rigenera docs/LAYOUT-SCHEMA.md
+python3 scripts/layout_cli.py capabilities           # feature attive del server
+python3 scripts/layout_cli.py list --folder campagna
+python3 scripts/layout_cli.py show campagna/a.layout.json --layers
+python3 scripts/layout_cli.py patch campagna/a.layout.json --set id=titolo --set skewX=-12
+python3 scripts/layout_cli.py add campagna/a.layout.json --json '{"type":"shape","shapeKind":"hexagon","x":80,"y":80,"w":300,"h":300,"fill":"#ff5500"}'
+python3 scripts/layout_cli.py live-patch --set id=titolo --set color=#ffffff --path campagna/a.layout.json
+python3 scripts/layout_cli.py export campagna/a.layout.json --out campagna/exports/a.png
+```
+
+Solo stdlib. `live-patch` colpisce l'editor aperto e, se non c'è nessuna sessione,
+ricade sul file quando passi `--path`.
+
+### 3. MCP
+
+`docker compose up -d` alza l'editor su `8765` e il server MCP su `8766`. Gli LLM si
+collegano via HTTP senza installare nulla in locale:
+
+```bash
+python3 mcp-server/install.py --url http://<ip-macchina-docker>:8766/mcp
+```
+
+Dettagli e modalità senza Docker: `mcp-server/README.md`.
 
 ## Workflow consigliato
 
@@ -107,6 +140,9 @@ Questa v0 esporta immagini statiche. Per reel si userà un modulo separato:
 
 - `scripts/run_server.py` — avvia server locale statico.
 - `scripts/make_layout_from_image.py` — crea un layout base partendo da un'immagine finale come background, utile per annotare/correggere.
+- `scripts/layout_cli.py` — CLI per schema, list, show, patch, add, live-patch, export.
+- `scripts/gen_schema_doc.py` — rigenera `docs/LAYOUT-SCHEMA.md` da `scripts/api_catalog.py`.
+- `scripts/api_catalog.py` — unica sorgente di verità di endpoint, campi layer e ricette per agenti.
 
 ## Nota importante
 
