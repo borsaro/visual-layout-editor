@@ -95,7 +95,7 @@ LAYOUT_ROOT = {
 # Every layer type accepts these, on top of its own fields.
 COMMON_LAYER_FIELDS = [
     'id', 'type', 'name', 'x', 'y', 'w', 'h', 'z',
-    'opacity', 'rotation', 'skewX', 'skewY', 'blendMode', 'visible', 'locked', 'shadow',
+    'opacity', 'rotation', 'skewX', 'skewY', 'warp', 'blendMode', 'visible', 'locked', 'shadow',
 ]
 
 LAYER_FIELDS_FOR_AGENTS = {
@@ -169,6 +169,18 @@ LAYER_FIELDS_FOR_AGENTS = {
         'example_patch': {'id': 'layer_title', 'skewX': -12},
     },
     'skewY': {'type': 'number', 'default': 0, 'desc': 'Vertical slant in degrees, applied after rotation'},
+    'warp': {
+        'type': 'array',
+        'desc': 'Free corner distort: [[x,y] x 4] for top-left, top-right, bottom-right, '
+                'bottom-left, normalized to the box (0,0 = top-left corner, 1,1 = bottom-right). '
+                'Four independent corners give a perspective distort, unlike skewX/skewY which '
+                'stay affine. Omit or use the identity [[0,0],[1,0],[1,1],[0,1]] for no distort. '
+                'Three collinear corners are degenerate and are rejected.',
+        'example_patch': {
+            'id': 'layer_title',
+            'warp': [[0.06, 0.02], [1, 0], [0.94, 0.98], [0, 1]],
+        },
+    },
     'shapeKind': {
         'type': 'string',
         'enum': SHAPE_KINDS,

@@ -56,6 +56,7 @@ Esempio che usa tutte le funzionalità: `examples/feature-reference.layout.json`
 | `rotation` | number | Rotation in degrees around the box center _(default `0`)_ |
 | `skewX` | number | Horizontal slant in degrees, any layer type. On text it obliques the glyphs themselves, so it works on fonts with no italic face. Applied after rotation. _(default `0`)_ |
 | `skewY` | number | Vertical slant in degrees, applied after rotation _(default `0`)_ |
+| `warp` | array | Free corner distort: [[x,y] x 4] for top-left, top-right, bottom-right, bottom-left, normalized to the box (0,0 = top-left corner, 1,1 = bottom-right). Four independent corners give a perspective distort, unlike skewX/skewY which stay affine. Omit or use the identity [[0,0],[1,0],[1,1],[0,1]] for no distort. Three collinear corners are degenerate and are rejected. |
 | `blendMode` | string | Canvas/CSS blend mode _(uno di: `normal`, `screen`, `multiply`, `overlay`, `lighter`)_ |
 | `visible` | boolean | Hide layer in editor and export _(default `true`)_ |
 | `locked` | boolean | If true, UI blocks drag/resize/edit. Agents set via JSON or POST /api/patch-layers _(default `false`)_ |

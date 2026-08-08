@@ -17,6 +17,8 @@ const state = {
   localFileHandle: null, // File System Access API handle (Carica JSON → Salva Json)
   showSafeGuides: localStorage.getItem('robyShowSafeGuides') === '1',
   vertexEditId: null, // shape layer currently in per-vertex warp mode
+  warpMode: localStorage.getItem('robyWarpMode') === '1', // corner-distort editing on the canvas
+  warpModeTemp: false, // Option/Alt held: distort until the key is released
   campaignsRoot: '',
   editorRoot: '',
 };
@@ -171,6 +173,7 @@ function render(opts = {}) {
   if(state.showSafeGuides) canvas.appendChild(renderSafeGuides());
   // Mask ABOVE layers so overflow (incl. screen blend) is dimmed; hole = artboard
   canvas.appendChild(renderCanvasOverflowMask());
+  renderWarpOverlay(canvas);
   if(!opts.skipProps){
     renderLayerList();
     renderProps();
@@ -213,7 +216,10 @@ function renderLayer(layer) {
   Object.assign(el.style, {
     left: layer.x + 'px', top: layer.y + 'px', width: layer.w + 'px', height: layer.h + 'px',
     zIndex: layer.z || 1, opacity: layer.opacity ?? 1,
-    transform: `rotate(${Number(layer.rotation)||0}deg) skew(${Number(layer.skewX)||0}deg, ${Number(layer.skewY)||0}deg)`, transformOrigin: 'center center',
+    transform: layerHasWarp(layer)
+      ? mat3ToCssMatrix3d(layerFullMatrix(layer))
+      : `rotate(${Number(layer.rotation)||0}deg) skew(${Number(layer.skewX)||0}deg, ${Number(layer.skewY)||0}deg)`,
+    transformOrigin: layerHasWarp(layer) ? '0 0' : 'center center',
   });
   applyBlendDom(el, layer);
   if (layer.type === 'text') {
@@ -301,7 +307,7 @@ function renderLayer(layer) {
     el.classList.add('vertexEditing');
     appendVertexHandles(el, layer);
   }
-  if(!layerLocked(layer) && !editingVertices){
+  if(!layerLocked(layer) && !editingVertices && !warpEditActive(layer)){
     ['nw','ne','sw','se'].forEach(pos=>{
       const handle = document.createElement('div');
       handle.className = `resizeHandle handle-${pos}`;
@@ -524,6 +530,15 @@ function renderProps(){
     syncKeyBlackProps(imageL);
     syncImageAdjustProps(imageL);
   }
+
+  const warpBox = $('warpProps');
+  if(warpBox) warpBox.hidden = !sel.some(warpSupported);
+  syncWarpModeUi();
+
+  const svgL = isInlineSvgLayer(primary) ? primary : sel.find(isInlineSvgLayer);
+  const svgTintBox = $('svgTintProps');
+  if(svgTintBox) svgTintBox.hidden = !svgL;
+  if(svgL) syncSvgTintProps(svgL);
 
   const gradL = repr('gradient');
   if(gradL) syncGradientProps(gradL);
@@ -856,6 +871,7 @@ function bindProps(){
     fontSizeRange.addEventListener('change', commitPropHistory);
   }
   $('propName').oninput=()=>updateProp('name',$('propName').value);
+  $('copyLayerRefBtn')?.addEventListener('click', (ev)=>copyLayerRef({nameOnly: ev.altKey}));
   $('propVisible')?.addEventListener('change', ()=>updateProp('visible', $('propVisible').checked));
   $('propLocked')?.addEventListener('change', ()=>updateProp('locked', $('propLocked').checked));
   $('propBlendMode')?.addEventListener('change', ()=>updateProp('blendMode', normalizeBlendMode($('propBlendMode').value)));
@@ -905,6 +921,8 @@ function bindProps(){
   bindEffect('propShadow', 'shadow', true);
   bindEffect('propGlow', 'glow', false);
   bindShapeProps();
+  bindSvgTintProps();
+  bindWarpProps();
   document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
     btn.onclick=()=>{
       const key=btn.dataset.styleToggle;
@@ -1124,6 +1142,13 @@ async function reloadCurrentLayout(){
     setTimeout(()=>btn?.classList.remove('spinning'), 600);
   }
 }
+async function drawLayerOnCanvas(ctx, l){
+  if(l.type==='rect') drawRoundRect(ctx,l.x,l.y,l.w,l.h,l.radius||0,l.fill,l.stroke,l.strokeWidth||0,l);
+  if(l.type==='text') drawCanvasText(ctx,l);
+  if(l.type==='image') await drawCanvasImage(ctx,l);
+  if(l.type==='gradient') drawCanvasGradient(ctx,l);
+  if(l.type==='shape') drawCanvasShape(ctx,l);
+}
 async function renderLayoutToCanvas(ctx, layout, w, h){
   ctx.fillStyle=layout.canvas?.background || '#ffffff'; ctx.fillRect(0,0,w,h);
   for(const l of [...(layout.layers||[])].sort((a,b)=>(a.z||0)-(b.z||0))){
@@ -1139,11 +1164,8 @@ async function renderLayoutToCanvas(ctx, layout, w, h){
       if(skx||sky) ctx.transform(1, Math.tan(sky), Math.tan(skx), 1, 0, 0);
       ctx.translate(-(l.x+l.w/2),-(l.y+l.h/2));
     }
-    if(l.type==='rect') drawRoundRect(ctx,l.x,l.y,l.w,l.h,l.radius||0,l.fill,l.stroke,l.strokeWidth||0,l);
-    if(l.type==='text') drawCanvasText(ctx,l);
-    if(l.type==='image') await drawCanvasImage(ctx,l);
-    if(l.type==='gradient') drawCanvasGradient(ctx,l);
-    if(l.type==='shape') drawCanvasShape(ctx,l);
+    if(layerHasWarp(l)) await drawLayerWarped(ctx, l, drawLayerOnCanvas);
+    else await drawLayerOnCanvas(ctx, l);
     ctx.restore();
   }
 }
@@ -1424,6 +1446,38 @@ function layoutFileRef(){
   if(state.localFileHandle?.name) return state.localFileHandle.name + ' (locale)';
   if(state.loadedJsonFilename) return state.loadedJsonFilename + ' (locale)';
   return '(nessun file aperto)';
+}
+
+/** Compact one-line-per-layer reference: what an LLM needs to target the layer, without the full JSON. */
+function buildLayerRefClipboard(layers){
+  const list = layers || [];
+  const lines = list.map((l) => [
+    `id: ${l.id}`,
+    `tipo: ${l.type}`,
+    `nome: "${l.name || ''}"`,
+    `box: ${Math.round(l.x)},${Math.round(l.y)} ${Math.round(l.w)}x${Math.round(l.h)}`,
+  ].join(' | '));
+  lines.push(`file: ${layoutFileRef()}`);
+  return lines.join('\n');
+}
+
+async function copyLayerRef({nameOnly = false} = {}){
+  const layers = selectedLayers();
+  if(!layers.length){
+    showToast('Nessun layer selezionato');
+    return;
+  }
+  const text = nameOnly
+    ? layers.map((l) => l.name || '').join('\n')
+    : buildLayerRefClipboard(layers);
+  try{
+    await copyTextToClipboard(text);
+    showToast(nameOnly
+      ? `Nome copiato (${layers.length} layer)`
+      : `Riferimento copiato (${layers.length} layer) → ${layoutFileRef()}`);
+  }catch(e){
+    showToast('Copia fallita: ' + (e.message || e));
+  }
 }
 
 /** Exact layer objects from current layout state (same as layers[] in the .layout.json). */

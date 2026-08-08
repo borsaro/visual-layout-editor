@@ -1,0 +1,38 @@
+/* Corner-distort mode: toolbar toggle, quad outline and the four corner handles. */
+
+.toolbarToggle { padding: 5px 10px; font-size: 12px; }
+.toolbarToggle.active { border-color: var(--blue); background: rgba(79, 140, 255, .2); color: #fff; }
+
+/* Sits above the overflow mask so handles stay grabbable outside the artboard. */
+.warpOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999995;
+  overflow: visible;
+}
+.warpGroup { position: absolute; inset: 0; overflow: visible; }
+
+.warpOutline { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.warpOutline polygon {
+  fill: rgba(79, 140, 255, .08);
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.warpHandle {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .55);
+  cursor: crosshair;
+  pointer-events: auto;
+  z-index: 999996;
+}
+.warpHandle:hover { background: #fff; border-color: var(--blue); }

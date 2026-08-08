@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="./left-panel.css?v=20260726-accordion" />
   <link rel="stylesheet" href="./inspector.css?v=20260807-shapes" />
   <link rel="stylesheet" href="./shapes.css?v=20260807-shapes" />
+  <link rel="stylesheet" href="./warp.css?v=20260807-warp" />
 </head>
 <body>
   <header class="topbar">
@@ -97,6 +98,7 @@
     <section class="stageWrap">
       <div class="stageToolbar">
         <label>Zoom <input id="zoomRange" type="range" min="15" max="400" step="0.5" value="100"><span id="zoomLabel">100%</span></label>
+        <button type="button" id="warpModeBtn" class="toolbarToggle" aria-pressed="false" title="Distorsione angoli — trascina i 4 angoli in modo indipendente (o tieni premuto Option)">Distorsione</button>
         <span id="canvasInfo"></span>
       </div>
       <div class="stageScroller">
@@ -115,7 +117,10 @@
       <div id="props" hidden>
         <section id="selectionProps" class="inspectorSection">
           <div class="inspectorSectionTitle"><span>Layer</span></div>
-          <label>Nome <input id="propName"></label>
+          <div class="nameRow">
+            <label>Nome <input id="propName"></label>
+            <button type="button" id="copyLayerRefBtn" class="nameCopyBtn" title="Copia riferimento layer per LLM (click: riferimento — alt+click: solo nome)">Copia rif.</button>
+          </div>
           <div class="layerStateRow">
             <label class="toggleRow"><input id="propVisible" type="checkbox" checked> Visibile</label>
             <label class="toggleRow"><input id="propLocked" type="checkbox"> Bloccato</label>
@@ -310,6 +315,40 @@
           </div>
           <p class="muted hint">Maniglie: Shift = resize libero · Ctrl/Cmd = crop immagine</p>
         </section>
+        <section id="svgTintProps" class="inspectorSection" hidden>
+          <div class="inspectorSectionTitle"><span>Colore SVG</span></div>
+          <label>Modalità
+            <select id="propSvgTintMode">
+              <option value="none">Originale</option>
+              <option value="solid">Tinta uniforme</option>
+              <option value="gradient">Sfumatura</option>
+            </select>
+          </label>
+          <label id="svgTintSolidField" hidden>Colore <input id="propSvgTintColor" type="color" value="#0A0714"></label>
+          <div id="svgTintGradientFields" hidden>
+            <label>Tipo
+              <select id="propSvgTintGradType">
+                <option value="linear">Lineare</option>
+                <option value="radial">Radiale</option>
+              </select>
+            </label>
+            <label id="svgTintAngleField">Angolo ° <input id="propSvgTintAngle" type="number" step="1" value="90"></label>
+            <div class="grid2">
+              <label>Stop A <input id="propSvgTintStopAColor" type="color" value="#FF2E63"></label>
+              <label>Alpha A <input id="propSvgTintStopAAlpha" type="number" min="0" max="1" step="0.05" value="1"></label>
+            </div>
+            <div class="grid2">
+              <label>Stop B <input id="propSvgTintStopBColor" type="color" value="#8A63FF"></label>
+              <label>Alpha B <input id="propSvgTintStopBAlpha" type="number" min="0" max="1" step="0.05" value="1"></label>
+            </div>
+          </div>
+          <p class="muted hint">Ricolora i riempimenti dell'SVG inline. `fill="none"` resta intatto; l'originale è recuperabile con "Originale".</p>
+        </section>
+        <section id="warpProps" class="inspectorSection" hidden>
+          <div class="inspectorSectionTitle"><span>Distorsione angoli</span></div>
+          <button type="button" id="warpResetBtn" class="wide">Reset distorsione</button>
+          <p id="warpHint" class="muted hint"></p>
+        </section>
         <section id="alignCanvasProps" class="inspectorSection arrangeSection collapsible">
           <div class="inspectorSectionTitle"><span>Allinea al canvas</span></div>
           <div class="alignActions iconActions">
@@ -385,6 +424,9 @@
   <script src="./effects.js?v=20260807-shapes"></script>
   <script src="./asset-src.js?v=20260719-assets"></script>
   <script src="./gradient.js?v=20260719-gradient"></script>
+  <script src="./svg-tint.js?v=20260807-svgtint"></script>
+  <script src="./warp.js?v=20260807-warp"></script>
+  <script src="./warp-editor.js?v=20260807-warp"></script>
   <script src="./shapes.js?v=20260807-shapes"></script>
   <script src="./shape-editor.js?v=20260807-shapes"></script>
   <script src="./shape-props.js?v=20260807-shapes"></script>

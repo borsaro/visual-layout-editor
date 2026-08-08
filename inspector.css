@@ -52,6 +52,9 @@
 .styleToggle{height:32px;border-radius:5px}
 .fontRow{gap:6px;margin:0}
 .fontCopyBtn{height:32px;align-self:flex-end}
+.nameRow{display:flex;gap:6px;align-items:flex-end}
+.nameRow>label{flex:1 1 auto;min-width:0}
+.nameCopyBtn{flex:0 0 auto;height:32px;white-space:nowrap;padding:0 10px;font-size:12px}
 .propSubhead{margin:3px 0 0;padding-top:8px;border-top:1px solid #2b303a;font-size:10px}
 .hint{font-size:10px!important;color:#8f98a6!important}
 
