@@ -179,6 +179,9 @@ function render(opts = {}) {
     renderProps();
   }
   if(typeof publishLiveState === 'function') publishLiveState();
+  // Cheap enough here (render already rebuilt the stage) and keeps the unsaved-edits
+  // marker on the active variant honest after every change.
+  if(typeof syncVariantsSelectionUi === 'function') syncVariantsSelectionUi();
 }
 
 /** Replace one layer node on stage without rebuilding the props panel / font <select>. */
@@ -958,20 +961,36 @@ function layoutPayload(){
   return { version:1, app:'roby-visual-layout-editor', canvas:state.canvas, layers:state.layers };
 }
 async function saveJsonOverwrite(){
-  // 1) Layout da libreria / API (path server)
+  // 1) Layout da libreria / API (path server) — salva l'intero progetto:
+  // il base nel .layout.json e ogni variante modificata nel suo sidecar.
   if(state.currentLayoutPath){
+    // Whatever is on screen may be a variant, so the base written here comes from the
+    // variants module, not from the canvas.
+    const baseLayers = typeof variantsBaseLayersForSave === 'function'
+      ? variantsBaseLayersForSave()
+      : state.layers;
     const res = await fetch('/api/save-layout', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path: state.currentLayoutPath, layout: layoutPayload()}),
+      body: JSON.stringify({path: state.currentLayoutPath, layout: {...layoutPayload(), layers: baseLayers}}),
     });
     const data = await res.json();
     if(!data.ok){ alert('Errore salvataggio JSON: ' + data.error); return; }
     state.currentLayoutPath = data.path;
     clearLocalFileHandle();
+    let summary = null;
+    try{
+      summary = await variantsAfterBaseSave?.();
+    }catch(e){
+      alert('Layout salvato, ma le varianti no: ' + (e.message || e));
+      return;
+    }
     clearDirty();
     render();
-    showToast('JSON sovrascritto: ' + data.path);
+    const extra = summary?.savedVariants
+      ? ` · ${summary.savedVariants} variant${summary.savedVariants > 1 ? 'i' : 'e'}`
+      : '';
+    showToast('Progetto salvato: ' + data.path + extra);
     uploadCurrentLayoutPreview?.();
     return;
   }
@@ -1033,11 +1052,22 @@ async function saveLayoutAs(){
   const res = await fetch('/api/save-layout-as', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: state.currentLayoutPath, filename, layout: layoutPayload()})});
   const data = await res.json();
   if(!data.ok){ alert('Errore salvataggio con nome: '+data.error); return; }
+  const wasOnBase = !VARIANTS_STATE?.activeId;
   state.currentLayoutPath = data.path;
   clearDirty();
   uploadCurrentLayoutPreview?.();
+  // From the base, the set still describes these very layers, so it travels with the
+  // copy. From a variant, the new file is that variant flattened: carrying the set
+  // over would mean ops written against a base that is no longer there.
+  let copied = 0;
+  if(wasOnBase){
+    try{ copied = await copyVariantsTo?.(data.path) || 0; }
+    catch(e){ showToast('Varianti non copiate: ' + (e.message || e)); }
+  }
+  onLayoutChangedForVariants?.();
   render();
-  showToast('Layout salvato con nome: ' + data.path);
+  showToast('Layout salvato con nome: ' + data.path
+    + (copied ? ` · ${copied} varianti copiate` : (wasOnBase ? '' : ' · variante appiattita in un layout nuovo')));
 }
 function downloadLayoutJson(filename){
   const name = filename.endsWith('.json') ? filename : filename + '.layout.json';

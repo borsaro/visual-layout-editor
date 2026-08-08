@@ -70,8 +70,8 @@ def _validated_ops(ops: Any, index: int) -> dict:
     for key, value in (('patches', patches), ('add', add), ('remove', remove)):
         if not isinstance(value, list):
             raise ValueError(f'variants[{index}].ops.{key} must be a list')
-    if not (patches or add or remove):
-        raise ValueError(f'variants[{index}].ops is empty: nothing would change')
+    # Empty ops are legitimate: the editor creates a variant as a plain duplicate of
+    # the base, which the user then edits. Rejecting it would block that flow.
     for i, patch in enumerate(patches):
         if not isinstance(patch, dict):
             raise ValueError(f'variants[{index}].ops.patches[{i}] must be an object')

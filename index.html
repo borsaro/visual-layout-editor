@@ -117,12 +117,17 @@
         <div class="variantsBarBody">
           <div class="variantsActions">
             <button type="button" id="variantsBaseBtn" class="variantActive">Base</button>
+            <button type="button" id="variantsNewBtn" title="Crea una variante come duplicato del layout base, poi modificala sul canvas">+ Nuova variante</button>
             <button type="button" id="variantsPromoteBtn" disabled>Promuovi a layout</button>
             <button type="button" id="variantsDeleteBtn" disabled>Elimina</button>
             <button type="button" id="variantsReloadBtn" title="Rileggi il set dal disco">Aggiorna</button>
             <span id="variantsHint" class="muted hint"></span>
           </div>
           <div id="variantsList" class="variantsList"></div>
+          <p id="variantsEmpty" class="variantsEmpty" hidden>
+            Nessuna variante. Crea un duplicato del base con <strong>+ Nuova variante</strong> e modificalo sul canvas,
+            oppure chiedile all’agente.
+          </p>
         </div>
       </section>
     </section>

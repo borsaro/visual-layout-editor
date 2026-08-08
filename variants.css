@@ -8,7 +8,6 @@
   flex: 0 0 auto;
   max-height: 45vh;
 }
-.variantsBar.isEmpty { display: none; }
 
 .variantsBarHead {
   display: flex;
@@ -123,3 +122,17 @@
   border: 1px solid #8a5a2b;
 }
 .variantBadge.isPromoted { color: #b7f5d8; border-color: #1f7a55; }
+
+.variantsEmpty {
+  margin: 0;
+  padding: 14px 4px 6px;
+  font-size: 11px;
+  color: #8f98a6;
+  line-height: 1.5;
+}
+.variantsEmpty strong { color: #c7cddb; font-weight: 600; }
+
+/* Bulk selection is separate from the applied variant: ticked for delete, not on canvas. */
+.variantCard.isChecked { border-color: #eab308; box-shadow: 0 0 0 1px #eab308 inset; }
+.variantCard.isChecked.isActive { box-shadow: 0 0 0 1px var(--blue) inset, 0 0 0 3px rgba(234, 179, 8, .35); }
+.variantCard.hasEdits .variantLabel:after { content: ' •'; color: var(--accent); }

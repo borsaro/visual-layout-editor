@@ -42,11 +42,43 @@ base cambia in modo da rompere le varianti (un layer che puntavano non c'è più
 lettura le marca `stale` con l'elenco dei `missingLayers`, e l'editor le disattiva
 invece di applicarle a metà.
 
-## Promozione
+## Il progetto: base + varianti, un solo salvataggio
 
-Quando una variante è quella buona, **promuovila**: diventa un `.layout.json` autonomo
-accanto al base. Resta anche nel set, marcata con il file che ha prodotto, così non si
-perde da dove veniva.
+L'editor tratta layout base e varianti come **un progetto**. Ci si sposta fra base e
+varianti dalla barra, si modifica quello che si vuole, e un solo **Salva Json** scrive
+tutto dove va: il base nel `.layout.json`, le varianti nel sidecar.
+
+Cambiare selezione **non perde mai** le modifiche: restano come bozza in memoria e la
+card mostra un pallino finché non vengono salvate. L'etichetta `Base •` segnala lo
+stesso per il layout base. Il conteggio in fondo alla barra dice quante cose ci sono
+da salvare.
+
+Poiché una variante è fatta di override campo per campo, **modificare il base dopo si
+propaga**: correggi il logo nel base e tutte le varianti lo ereditano, ciascuna
+tenendo i propri scostamenti.
+
+### Creare una variante a mano
+
+**+ Nuova variante** duplica quello che è sul canvas. Partendo dal base pulito le ops
+sono vuote e la variante è identica al base: la si modifica e al salvataggio le
+differenze diventano le sue ops. Partendo da una variante, si ottiene una copia di
+quella.
+
+## Promozione: uscire dal progetto
+
+**Promuovi a layout** appiattisce una variante in un `.layout.json` autonomo accanto al
+base. Da quel momento è un layout indipendente: per modificarlo si apre quel file, non
+più la variante. La variante resta nel set marcata con il file che ha prodotto, così
+non si perde da dove veniva. Si promuove ciò che è su disco, quindi va salvato prima.
+
+**Salva con nome** si comporta di conseguenza: dal base copia anche il set di varianti
+sul nuovo nome (le ops descrivono gli stessi layer); da una variante scrive quella
+variante appiattita, senza portarsi dietro un set scritto contro un altro base.
+
+### Selezione multipla
+
+Click applica una variante. **Cmd/Ctrl+click** e **Shift+click** invece la spuntano
+soltanto, senza toccare il canvas, per eliminarne più di una in un colpo.
 
 ## Tool MCP
 
