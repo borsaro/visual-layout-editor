@@ -4,16 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 
-ALLOWED_PATCH_KEYS = {
-    'locked', 'visible', 'name', 'x', 'y', 'w', 'h', 'z', 'opacity', 'rotation',
-    'skewX', 'skewY',
-    'blendMode', 'src', 'fit', 'text', 'fontSize', 'fontWeight', 'fontFamily',
-    'fontStyle', 'color', 'align', 'vAlign', 'lineHeight', 'letterSpacing',
-    'textTransform', 'underline', 'strikethrough',
-    'fill', 'stroke', 'strokeWidth', 'radius',
-    'shapeKind', 'sides', 'corner', 'fillEnabled', 'points',
-    'shadow', 'glow', 'keyBlack', 'adjust', 'crop', 'gradientType', 'angle', 'stops',
-}
+from api_catalog import LAYER_FIELDS_FOR_AGENTS
+
+# Derived from the catalog on purpose: this list and the one get_capabilities
+# publishes used to be maintained separately, and drifted — `warp` was documented
+# as a field while patches carrying it were dropped without a word.
+# `id` and `type` are how a patch targets a layer, never what it writes.
+ALLOWED_PATCH_KEYS = set(LAYER_FIELDS_FOR_AGENTS) - {'id', 'type'}
 
 
 def find_layer(layers: list[dict], patch: dict) -> dict | None:
