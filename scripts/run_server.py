@@ -307,6 +307,25 @@ def delete_library_target(kind: str, raw: str):
     raise ValueError(f'Unsupported delete kind: {kind}')
 
 
+def _write_variant_thumbs(layout_path: Path, layout: dict, variants: list[dict]) -> int:
+    """Render every variant in one browser session and drop the JPEGs in the sidecar dir."""
+    from export_render import render_layout_thumbs
+    from variants import apply_variant, variant_thumb_path, variants_thumb_dir
+
+    if not variants:
+        return 0
+    baked = [apply_variant(layout, v) for v in variants]
+    images = render_layout_thumbs(baked, origin=f'http://127.0.0.1:{PORT}')
+    variants_thumb_dir(layout_path).mkdir(parents=True, exist_ok=True)
+    written = 0
+    for variant, data in zip(variants, images):
+        if not data:
+            continue
+        variant_thumb_path(layout_path, variant['id']).write_bytes(data)
+        written += 1
+    return written
+
+
 def make_layout_from_image(path: Path):
     w, h = image_size(path)
     src = asset_src_for(path)
@@ -426,6 +445,31 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if parsed.path == '/api/variants':
+                from variants import annotate_staleness, read_variants
+                q = parse_qs(parsed.query)
+                layout_path = resolve_allowed_layout((q.get('path') or [''])[0])
+                layout = json.loads(layout_path.read_text(encoding='utf-8'))
+                payload = annotate_staleness(read_variants(layout_path), layout)
+                self._json(200, {'ok': True, 'path': public_path(layout_path), **payload})
+                return
+            if parsed.path == '/api/variant-thumb':
+                from variants import variant_thumb_path
+                q = parse_qs(parsed.query)
+                layout_path = resolve_allowed_layout((q.get('path') or [''])[0])
+                thumb = variant_thumb_path(layout_path, (q.get('id') or [''])[0])
+                if not thumb.exists():
+                    self._json(404, {'ok': False, 'error': 'Thumbnail not found'})
+                    return
+                data = thumb.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/jpeg')
+                self.send_header('Content-Length', str(len(data)))
+                # Thumbnails are regenerated in place on the same URL, so no caching.
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if parsed.path == '/api/file':
                 q = parse_qs(parsed.query)
                 p = resolve_allowed_file((q.get('path') or [''])[0])
@@ -513,6 +557,9 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/save-preview',
             '/api/live/state',
             '/api/live/patch',
+            '/api/variants',
+            '/api/variants/promote',
+            '/api/variants/delete',
         ]:
             self.send_error(404, 'Unknown API endpoint')
             return
@@ -596,6 +643,65 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'delivered_to': delivered,
                     'error': None if delivered else 'No editor connected. Open the editor, or use /api/patch-layers to edit the file directly.',
                 })
+                return
+
+            if parsed.path == '/api/variants':
+                from variants import (annotate_staleness, read_variants, variant_thumb_path,
+                                      variants_thumb_dir, write_variants)
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                saved = write_variants(
+                    target, layout, payload.get('variants') or [],
+                    replace=bool(payload.get('replace', True)),
+                )
+                thumbs_written = 0
+                thumb_error = None
+                if payload.get('thumbnails', True):
+                    try:
+                        thumbs_written = _write_variant_thumbs(target, layout, saved['variants'])
+                    except Exception as e:  # thumbnails are cosmetic: never lose the set over them
+                        thumb_error = str(e)
+                self._json(200, {
+                    'ok': True,
+                    'path': public_path(target),
+                    'thumbnails': thumbs_written,
+                    'thumbnail_error': thumb_error,
+                    **annotate_staleness(read_variants(target), layout),
+                })
+                return
+
+            if parsed.path == '/api/variants/promote':
+                from variants import promote_variant
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                res = promote_variant(target, layout, payload.get('id'), payload.get('filename'))
+                self._json(200, {
+                    'ok': True,
+                    'path': public_path(Path(res['path'])),
+                    'filename': res['filename'],
+                })
+                return
+
+            if parsed.path == '/api/variants/delete':
+                from variants import read_variants, variant_thumb_path, write_variants
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                drop = {str(x) for x in (payload.get('ids') or []) if x}
+                if not drop:
+                    raise ValueError('ids[] required')
+                kept = [v for v in (read_variants(target).get('variants') or []) if v.get('id') not in drop]
+                for vid in drop:
+                    thumb = variant_thumb_path(target, vid)
+                    if thumb.exists():
+                        thumb.unlink()
+                if kept:
+                    write_variants(target, layout, kept, replace=True)
+                else:
+                    from variants import variants_path
+                    vp = variants_path(target)
+                    if vp.exists():
+                        vp.unlink()
+                self._json(200, {'ok': True, 'removed': sorted(drop), 'remaining': len(kept)})
                 return
 
             if parsed.path == '/api/patch-layers':

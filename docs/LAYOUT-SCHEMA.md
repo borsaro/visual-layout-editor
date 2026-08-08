@@ -176,6 +176,11 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 | `GET` | `/api/list-layouts` | List campaign folders/layouts/images?folder=&phase=folders\|items\|all&light=1 |
 | `GET` | `/api/load-layout` | Load layout JSON?path= |
 | `GET` | `/api/layout-preview` | Serve layout sidecar JPEG preview?path= |
+| `GET` | `/api/variants` | Read the variant set of a layout?path= (with staleness flags) |
+| `GET` | `/api/variant-thumb` | Serve one variant thumbnail?path=&id= |
+| `POST` | `/api/variants` | Save variants {path, variants:[{id,label,axes,ops}], replace?, thumbnails?} |
+| `POST` | `/api/variants/promote` | Bake one variant into its own layout {path, id, filename?} |
+| `POST` | `/api/variants/delete` | Drop variants from the set {path, ids:[]} |
 | `GET` | `/api/file` | Serve image bytes?path= (_assets/… or campaign-relative) |
 | `GET` | `/api/fonts` | List host Font Book families (Docker-mounted Mac fonts) |
 | `GET` | `/api/font-file` | Serve one host font file?id= |

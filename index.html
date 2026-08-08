@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="./inspector.css?v=20260807-shapes" />
   <link rel="stylesheet" href="./shapes.css?v=20260807-shapes" />
   <link rel="stylesheet" href="./warp.css?v=20260807-warp" />
+  <link rel="stylesheet" href="./variants.css?v=20260808-variants" />
 </head>
 <body>
   <header class="topbar">
@@ -106,6 +107,24 @@
           <div id="canvas" class="canvas"></div>
         </div>
       </div>
+      <section id="variantsBar" class="variantsBar isCollapsed">
+        <button type="button" id="variantsToggle" class="variantsBarHead" aria-expanded="false">
+          <span class="variantsTitle">Varianti</span>
+          <span id="variantsCount" class="variantsCount">0</span>
+          <span id="variantsStale" class="variantsStale" hidden>base cambiato</span>
+          <span class="variantsChevron" aria-hidden="true"></span>
+        </button>
+        <div class="variantsBarBody">
+          <div class="variantsActions">
+            <button type="button" id="variantsBaseBtn" class="variantActive">Base</button>
+            <button type="button" id="variantsPromoteBtn" disabled>Promuovi a layout</button>
+            <button type="button" id="variantsDeleteBtn" disabled>Elimina</button>
+            <button type="button" id="variantsReloadBtn" title="Rileggi il set dal disco">Aggiorna</button>
+            <span id="variantsHint" class="muted hint"></span>
+          </div>
+          <div id="variantsList" class="variantsList"></div>
+        </div>
+      </section>
     </section>
 
     <aside class="panel right">
@@ -438,6 +457,7 @@
   <script src="./live-client.js?v=20260807-live"></script>
   <script src="./inspector-controls.js?v=20260807-shapes"></script>
   <script src="./app.js?v=20260807-shapes"></script>
+  <script src="./variants-panel.js?v=20260808-variants"></script>
   <script src="./library.js?v=20260726-library-toggle3"></script>
 </body>
 </html>

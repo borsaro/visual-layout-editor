@@ -134,6 +134,73 @@ async def export_png(path: str, out: str | None = None) -> dict:
     return await _post('/api/export', payload)
 
 
+@mcp.tool()
+async def list_variants(path: str) -> dict:
+    """Read the variant set of a layout: alternative versions shown in the editor's bar.
+
+    Each variant carries `stale` and `missingLayers`: true when the base layout has
+    changed so that the variant now targets layers that no longer exist.
+    """
+    return await _get('/api/variants', {'path': path})
+
+
+@mcp.tool()
+async def save_variants(
+    path: str,
+    variants: list[dict],
+    replace: bool = True,
+    thumbnails: bool = True,
+) -> dict:
+    """Save alternative versions of one layout, browsable from the editor's variants bar.
+
+    A variant is NOT a copy of the layout: it is the ops to apply on top of it, in the
+    same shape patch_live_layers already uses. Ten variants cost a couple of KB and the
+    base stays the single source of truth.
+
+        variants=[{
+          "id": "v01",                      # letters, digits, . _ - only
+          "label": "Headline più diretta",  # shown under the thumbnail
+          "axes": ["text", "color"],        # free tags: what this variant changes
+          "ops": {
+            "patches": [{"id": "title", "text": "…", "color": "#fff"}],
+            "add":     [{"id": "badge", "type": "rect", …}],   # optional
+            "remove":  ["old_layer_id"]                        # optional
+          }
+        }]
+
+    Any patchable layer field is fair game (see get_capabilities): copy, colors, image
+    src, position, warp. Combine several in one variant to vary more than one axis.
+
+    replace=False merges into the existing set by id instead of overwriting it.
+    thumbnails=False skips rendering, which is much faster while iterating on the ops.
+    """
+    return await _post('/api/variants', {
+        'path': path,
+        'variants': variants,
+        'replace': replace,
+        'thumbnails': thumbnails,
+    })
+
+
+@mcp.tool()
+async def promote_variant(path: str, variant_id: str, filename: str | None = None) -> dict:
+    """Bake one variant into its own standalone .layout.json next to the base.
+
+    Use when a variant is picked as a keeper. The variant stays in the set, marked with
+    the file it produced, so the link back to where it came from survives.
+    """
+    payload: dict = {'path': path, 'id': variant_id}
+    if filename:
+        payload['filename'] = filename
+    return await _post('/api/variants/promote', payload)
+
+
+@mcp.tool()
+async def delete_variants(path: str, variant_ids: list[str]) -> dict:
+    """Drop variants (and their thumbnails) from a layout's set."""
+    return await _post('/api/variants/delete', {'path': path, 'ids': variant_ids})
+
+
 def _transport_security() -> TransportSecuritySettings | None:
     """Host allowlist for the HTTP transport.
 

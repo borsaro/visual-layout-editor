@@ -59,6 +59,53 @@ def render_layout_png_bytes(layout: dict[str, Any], origin: str | None = None) -
     return base64.b64decode(b64)
 
 
+def render_layout_thumbs(
+    layouts: list[dict[str, Any]],
+    max_side: int = 320,
+    quality: float = 0.72,
+    origin: str | None = None,
+) -> list[bytes]:
+    """JPEG thumbnails for a batch of layouts, one browser for the whole set.
+
+    render_layout_png_bytes launches Chromium per call, which is fine for a single
+    export and hopeless for ten variants: the launch dominates, and the bar would
+    take ~20s to fill. Reusing one page brings the per-item cost down to the render.
+    """
+    if not layouts:
+        return []
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        raise RuntimeError(
+            'Playwright non installato. In Docker: rebuild (`docker compose up -d --build`). '
+            'In locale: pip install -r requirements.txt && playwright install chromium'
+        ) from e
+
+    base = (origin or _origin()).rstrip('/')
+    out: list[bytes] = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=_chromium_launch_args())
+        try:
+            page = browser.new_page(viewport={'width': 1280, 'height': 720})
+            page.goto(f'{base}/export.html', wait_until='networkidle', timeout=60000)
+            page.wait_for_function(
+                '() => window.__robyExportReady === true '
+                '&& typeof window.exportLayoutToThumbBase64 === "function"',
+                timeout=30000,
+            )
+            for layout in layouts:
+                b64 = page.evaluate(
+                    """async ([layout, maxSide, quality]) => {
+                        return await window.exportLayoutToThumbBase64(layout, maxSide, quality);
+                    }""",
+                    [layout, max_side, quality],
+                )
+                out.append(base64.b64decode(b64) if b64 else b'')
+        finally:
+            browser.close()
+    return out
+
+
 def render_layout_file(path: Path, out: Path | None = None) -> Path:
     layout = json.loads(path.read_text(encoding='utf-8'))
     png = render_layout_png_bytes(layout)

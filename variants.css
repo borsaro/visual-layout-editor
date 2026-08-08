@@ -1,0 +1,125 @@
+/* Variants bar: collapsible strip of alternative versions under the stage. */
+
+.variantsBar {
+  border-top: 1px solid var(--line);
+  background: #12151b;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 45vh;
+}
+.variantsBar.isEmpty { display: none; }
+
+.variantsBarHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #151820;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #d1d5db;
+}
+.variantsBarHead:hover { background: #1b1f28; }
+.variantsTitle { font-weight: 700; }
+.variantsCount {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.variantsStale {
+  background: #4b2a11;
+  border: 1px solid #8a5a2b;
+  color: #ffd8a8;
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.variantsChevron { margin-left: auto; font-size: 13px; }
+.variantsChevron:after { content: '⌄'; }
+.variantsBar:not(.isCollapsed) .variantsChevron:after { content: '⌃'; }
+
+.variantsBarBody { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; overflow: hidden; }
+.variantsBar.isCollapsed .variantsBarBody { display: none; }
+
+.variantsActions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.variantsActions button { padding: 5px 10px; font-size: 12px; }
+.variantsActions button.variantActive { border-color: var(--blue); background: rgba(79, 140, 255, .2); }
+
+.variantsList {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  align-items: flex-start;
+}
+
+.variantCard {
+  flex: 0 0 auto;
+  width: 120px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f1116;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+}
+.variantCard:hover { border-color: #4b5262; }
+.variantCard.isActive { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; }
+.variantCard.isStale { opacity: .55; }
+
+.variantThumb {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: contain;
+  background: #05060a;
+  border-radius: 4px;
+  display: block;
+}
+.variantThumbMissing {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 4px;
+  background: repeating-linear-gradient(45deg, #16191f, #16191f 6px, #1c202a 6px, #1c202a 12px);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: #6b7280;
+}
+.variantLabel {
+  font-size: 11px;
+  color: #e5e7eb;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.variantAxes { font-size: 9px; color: #8f98a6; text-transform: uppercase; letter-spacing: .04em; }
+.variantBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .72);
+  color: #ffd8a8;
+  border: 1px solid #8a5a2b;
+}
+.variantBadge.isPromoted { color: #b7f5d8; border-color: #1f7a55; }

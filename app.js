@@ -1097,6 +1097,7 @@ function loadLayoutObject(data, path=null, localName=null){
   clearDirty();
   syncCanvasInputs();
   render();
+  onLayoutChangedForVariants?.();
   Promise.resolve(loadHostFonts?.())
     .then(() => ensureLayoutCustomFonts?.(state.layers))
     .then(() => {
@@ -1343,6 +1344,37 @@ async function exportLayoutToPngBase64(layout){
   return dataUrl.split(',')[1] || '';
 }
 window.exportLayoutToPngBase64 = exportLayoutToPngBase64;
+
+/**
+ * Small JPEG for the variants bar. Rendered at full size and then downscaled:
+ * rendering straight into a small canvas would re-lay-out text at a size nobody
+ * will ever export, so the thumbnail would not match the real output.
+ */
+async function exportLayoutToThumbBase64(layout, maxSide = 320, quality = 0.72){
+  await loadHostFonts?.();
+  await ensureLayoutCustomFonts?.(layout.layers || []);
+  const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
+  await Promise.all([...families].map((f)=>waitForFont?.(f, 4000)));
+  try { await document.fonts.ready; } catch(_){}
+  const w = layout.canvas?.width || 1080;
+  const h = layout.canvas?.height || 1350;
+  const full = document.createElement('canvas');
+  full.width = w; full.height = h;
+  await renderLayoutToCanvas(full.getContext('2d'), layout, w, h);
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  const tw = Math.max(1, Math.round(w * scale));
+  const th = Math.max(1, Math.round(h * scale));
+  const small = document.createElement('canvas');
+  small.width = tw; small.height = th;
+  const sctx = small.getContext('2d');
+  sctx.imageSmoothingQuality = 'high';
+  // JPEG has no alpha: paint the artboard background first or transparency turns black.
+  sctx.fillStyle = layout.canvas?.background || '#ffffff';
+  sctx.fillRect(0, 0, tw, th);
+  sctx.drawImage(full, 0, 0, tw, th);
+  return (small.toDataURL('image/jpeg', quality).split(',')[1]) || '';
+}
+window.exportLayoutToThumbBase64 = exportLayoutToThumbBase64;
 function drawImageFit(ctx,img,l){
   if(l.crop){
     const c=normalizedCrop(l);
@@ -1622,9 +1654,13 @@ async function loadServerHealth(){
     if(!data.ok) throw new Error(data.error || 'health failed');
     state.campaignsRoot = data.campaigns_root || '';
     state.editorRoot = data.editor_root || '';
+    // Same set the server writes with, so a variant previewed here and a variant
+    // baked into a promoted file cannot end up carrying different fields.
+    state.patchableFields = Object.keys(data.layer_fields || {}).filter((k) => k !== 'id' && k !== 'type');
   }catch(e){
     state.campaignsRoot = '';
     state.editorRoot = '';
+    state.patchableFields = null;
   }
   const label = $('campaignsRootLabel');
   if(label){
@@ -1743,8 +1779,11 @@ function init(){
   initInspectorControls?.();
   if(typeof initLiveBridge === 'function') initLiveBridge();
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
+  bindVariantsBar?.();
   loadServerHealth().finally(()=>{
     render();
+    // After health: the patchable-field set it carries decides how variants apply.
+    loadVariants?.();
     ensureHostFontsInSelect?.().then(()=>{
       const l = selected();
       if(l?.type === 'text') populateFontSelect(l.fontFamily || l.font);
