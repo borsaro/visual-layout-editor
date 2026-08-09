@@ -92,8 +92,8 @@ python3 scripts/layout_cli.py live-patch --set id=titolo --set color=#ffffff --p
 python3 scripts/layout_cli.py export campagna/a.layout.json --out campagna/exports/a.png
 ```
 
-Solo stdlib. `live-patch` colpisce l'editor aperto e, se non c'è nessuna sessione,
-ricade sul file quando passi `--path`.
+Solo stdlib. `live-patch --path …` colpisce solo l'editor che ha aperto quel layout;
+se nessuno ce l'ha, ricade sul file.
 
 ### 3. MCP
 

@@ -486,16 +486,12 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 self._json(200, fonts_payload())
                 return
             if parsed.path == '/api/live/state':
-                from live_session import SESSION
-                state = SESSION.get_state()
-                self._json(200, {
-                    'ok': True,
-                    'connected': SESSION.client_count() > 0,
-                    'state': state,
-                })
+                from live_http import serve_state_get
+                serve_state_get(self)
                 return
             if parsed.path == '/api/live/stream':
-                self._serve_live_stream()
+                from live_http import serve_stream
+                serve_stream(self)
                 return
             if parsed.path == '/api/font-file':
                 from host_fonts import resolve_font_file
@@ -515,34 +511,6 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             self._json(400, {'ok': False, 'error': str(e)})
             return
         super().do_GET()
-
-    def _serve_live_stream(self):
-        """Long-lived SSE response. ThreadingHTTPServer gives each client its own thread."""
-        from live_session import HEARTBEAT_SECONDS, SESSION, sse_frame, sse_heartbeat
-        import queue as _queue
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('Connection', 'keep-alive')
-        self.send_header('X-Accel-Buffering', 'no')
-        self.end_headers()
-
-        sub = SESSION.subscribe()
-        try:
-            self.wfile.write(sse_frame('hello', {'clients': SESSION.client_count()}))
-            self.wfile.flush()
-            while True:
-                try:
-                    event, data = sub.get(timeout=HEARTBEAT_SECONDS)
-                    self.wfile.write(sse_frame(event, data))
-                except _queue.Empty:
-                    self.wfile.write(sse_heartbeat())
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            SESSION.unsubscribe(sub)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -619,30 +587,13 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 return
 
             if parsed.path == '/api/live/state':
-                from live_session import SESSION
-                SESSION.set_state({
-                    'path': payload.get('path'),
-                    'canvas': payload.get('canvas'),
-                    'layers': payload.get('layers') or [],
-                    'selectedIds': payload.get('selectedIds') or [],
-                    'dirty': bool(payload.get('dirty')),
-                })
-                self._json(200, {'ok': True})
+                from live_http import serve_state_post
+                serve_state_post(self, payload)
                 return
 
             if parsed.path == '/api/live/patch':
-                from live_session import SESSION, build_live_ops
-                ops = build_live_ops(payload)
-                delivered = SESSION.broadcast('patch', {
-                    **ops,
-                    'autosave': payload.get('autosave', True),
-                    'label': payload.get('label') or 'agent',
-                })
-                self._json(200 if delivered else 409, {
-                    'ok': bool(delivered),
-                    'delivered_to': delivered,
-                    'error': None if delivered else 'No editor connected. Open the editor, or use /api/patch-layers to edit the file directly.',
-                })
+                from live_http import serve_patch
+                serve_patch(self, payload)
                 return
 
             if parsed.path == '/api/variants':

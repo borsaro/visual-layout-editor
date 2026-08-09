@@ -6,7 +6,7 @@ Examples:
   python3 scripts/layout_cli.py list --folder my-campaign
   python3 scripts/layout_cli.py patch my-campaign/a.layout.json --set id=title --set skewX=-12
   python3 scripts/layout_cli.py add my-campaign/a.layout.json --json '{"type":"shape","shapeKind":"hexagon"}'
-  python3 scripts/layout_cli.py live-patch --set id=title --set fill=#ff0000
+  python3 scripts/layout_cli.py live-patch --path campagna/a.layout.json --set id=title --set fill=#ff0000
   python3 scripts/layout_cli.py export my-campaign/a.layout.json --out my-campaign/exports/a.png
 """
 import argparse
@@ -95,16 +95,25 @@ def cmd_add(client, args):
 
 
 def cmd_live(client, args):
-    out(client.get('/api/live/state'))
+    params = {}
+    if args.path:
+        params['path'] = args.path
+    if args.client:
+        params['client'] = args.client
+    out(client.get('/api/live/state', **params))
 
 
 def cmd_live_patch(client, args):
     payload = {'patches': build_patch(args), 'autosave': not args.no_save}
+    if args.path:
+        payload['path'] = args.path
+    if args.client:
+        payload['client'] = args.client
     try:
         out(client.post('/api/live/patch', payload))
     except ApiError as e:
         if e.status == 409 and args.path:
-            print('Nessun editor aperto, ricado sul file.', file=sys.stderr)
+            print('Nessun editor aperto su quel layout, ricado sul file.', file=sys.stderr)
             out(client.post('/api/patch-layers', {'path': args.path, 'patches': payload['patches']}))
             return
         raise
@@ -149,12 +158,15 @@ def main():
     s.set_defaults(fn=cmd_add)
 
     s = sub.add_parser('live', help='Layout attualmente aperto nell editor')
+    s.add_argument('--path', help='Filtra per layout aperto')
+    s.add_argument('--client', help='Filtra per tab editor')
     s.set_defaults(fn=cmd_live)
 
     s = sub.add_parser('live-patch', help='Modifica in diretta l editor aperto')
     s.add_argument('--set', action='append', metavar='K=V')
     s.add_argument('--json')
-    s.add_argument('--path', help='File su cui ricadere se nessun editor e aperto')
+    s.add_argument('--path', help='Target live di questo layout; fallback su file se nessun editor')
+    s.add_argument('--client', help='Target di uno specifico tab editor')
     s.add_argument('--no-save', action='store_true', help='Non salvare su disco dopo la patch')
     s.set_defaults(fn=cmd_live_patch)
 

@@ -165,7 +165,7 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 
 ### edit_live
 
-- **how**: GET /api/live/state to read what is on screen, POST /api/live/patch to change it in front of the user. Falls back to /api/patch-layers when nothing is open
+- **how**: GET /api/live/state?path= to read that design on screen, POST /api/live/patch with the same path to change it. Always pass path when more than one editor may be open. Falls back to /api/patch-layers when nothing is open
 - **undo**: Live edits go through the editor history, so the user can revert with Cmd+Z
 
 ## Endpoint HTTP
@@ -192,7 +192,7 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 | `POST` | `/api/create-layout-from-image` | Create sidecar layout from image {path} |
 | `POST` | `/api/export` | Server-side PNG via Playwright. Body: {path\|layout, out?, download?, return_base64?} |
 | `POST` | `/api/patch-layers` | Patch layer fields (locked/visible/…) without rewriting whole file. {path, patches:[{id\|name, ...fields}]} |
-| `GET` | `/api/live/stream` | SSE stream the open editor subscribes to, to receive agent edits live |
-| `GET` | `/api/live/state` | Layout currently open in the editor (live, not the file on disk) |
-| `POST` | `/api/live/state` | Editor publishes its own state here {path, canvas, layers, selectedIds, dirty} |
-| `POST` | `/api/live/patch` | Push a live edit to the open editor {patches?, add?, remove?, autosave?}. 409 when no editor is connected |
+| `GET` | `/api/live/stream` | SSE stream one editor tab subscribes to (?client=). Isolated per tab |
+| `GET` | `/api/live/state` | Open editor session(s)?path=&client=. One design when filtered; sessions[] if several |
+| `POST` | `/api/live/state` | Editor publishes its own state {client, path, canvas, layers, selectedIds, dirty} |
+| `POST` | `/api/live/patch` | Push a live edit {patches?, add?, remove?, autosave?, path?, client?}. Targets one design. 409 when no matching editor |

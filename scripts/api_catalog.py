@@ -32,23 +32,23 @@ ENDPOINTS = [
     {
         'method': 'GET',
         'path': '/api/live/stream',
-        'desc': 'SSE stream the open editor subscribes to, to receive agent edits live',
+        'desc': 'SSE stream one editor tab subscribes to (?client=). Isolated per tab',
     },
     {
         'method': 'GET',
         'path': '/api/live/state',
-        'desc': 'Layout currently open in the editor (live, not the file on disk)',
+        'desc': 'Open editor session(s)?path=&client=. One design when filtered; sessions[] if several',
     },
     {
         'method': 'POST',
         'path': '/api/live/state',
-        'desc': 'Editor publishes its own state here {path, canvas, layers, selectedIds, dirty}',
+        'desc': 'Editor publishes its own state {client, path, canvas, layers, selectedIds, dirty}',
     },
     {
         'method': 'POST',
         'path': '/api/live/patch',
-        'desc': 'Push a live edit to the open editor {patches?, add?, remove?, autosave?}. '
-                '409 when no editor is connected',
+        'desc': 'Push a live edit {patches?, add?, remove?, autosave?, path?, client?}. '
+                'Targets one design. 409 when no matching editor',
     },
 ]
 
@@ -249,6 +249,7 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
             'skew_transform': True,
             'vertex_warp': True,
             'live_session': True,
+            'live_multi_user': True,
             'mcp_server': True,
         },
         'agent': {
@@ -279,8 +280,10 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
                 'field': 'points',
             },
             'edit_live': {
-                'how': 'GET /api/live/state to read what is on screen, POST /api/live/patch to change '
-                       'it in front of the user. Falls back to /api/patch-layers when nothing is open',
+                'how': 'GET /api/live/state?path= to read that design on screen, '
+                       'POST /api/live/patch with the same path to change it. '
+                       'Always pass path when more than one editor may be open. '
+                       'Falls back to /api/patch-layers when nothing is open',
                 'undo': 'Live edits go through the editor history, so the user can revert with Cmd+Z',
             },
         },

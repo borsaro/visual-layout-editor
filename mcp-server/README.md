@@ -85,12 +85,12 @@ oppure `streamable-http` con `ROBY_MCP_HOST` e `ROBY_MCP_PORT`. Il compose usa i
 
 | Tool | Cosa fa |
 | --- | --- |
-| `get_live_state` | Legge il layout che è davvero sullo schermo, non il file su disco |
-| `patch_live_layers` | Modifica campi di layer esistenti, per `id` o `name` univoco |
-| `add_live_layers` | Aggiunge layer; `id` e `z` mancanti vengono generati |
-| `remove_live_layers` | Elimina layer per id |
+| `get_live_state` | Legge lo schermo di un editor. Passa `path` (o `client`) se ce n'è più di uno |
+| `patch_live_layers` | Modifica campi di layer esistenti, per `id` o `name` univoco. Passa `path` |
+| `add_live_layers` | Aggiunge layer; `id` e `z` mancanti vengono generati. Passa `path` |
+| `remove_live_layers` | Elimina layer per id. Passa `path` |
 
-Se nessun editor è connesso questi tool rispondono `ok: false` con un messaggio che suggerisce i tool file.
+Se nessun editor è connesso questi tool rispondono `ok: false` con un messaggio che suggerisce i tool file. Con più editor aperti, senza `path`/`client` la risposta elenca `sessions[]` e chiede di sceglierne uno.
 
 ### File — funzionano sempre
 
@@ -105,9 +105,8 @@ Se nessun editor è connesso questi tool rispondono `ok: false` con un messaggio
 ## Come funziona il canale live
 
 ```
-tool MCP → POST /api/live/patch → SSE /api/live/stream → browser applica su state.layers → render()
-                                                       → POST /api/save-layout (autosave)
-browser → POST /api/live/state → get_live_state legge la sessione viva
+tool MCP (+ path) → POST /api/live/patch → solo i tab con quel layout → render() + autosave
+browser tab → POST /api/live/state {client, path} → get_live_state?path= legge quella sessione
 ```
 
 Il trasporto è Server-Sent Events, non WebSocket: `run_server.py` è basato su `ThreadingHTTPServer` della
@@ -126,4 +125,6 @@ salvato a mano. Passa `autosave: false` per lasciare la modifica solo in session
 **Conflitto con il drag.** Se una patch arriva mentre l'utente sta trascinando un layer o un vertice, viene messa
 in coda e applicata al rilascio del mouse.
 
-**Più editor aperti.** La patch viene inviata a tutti i browser connessi; `delivered_to` dice a quanti.
+**Più editor aperti.** Ogni tab ha un `client` id. Le patch live vanno solo al design indicato
+con `path` (o a un tab con `client`). Due persone su due layout diversi non si interferiscono.
+Stesso file aperto in due tab: la patch con quel `path` arriva a entrambi.

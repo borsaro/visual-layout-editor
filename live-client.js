@@ -17,6 +17,34 @@ let liveSource = null;
 let liveStateTimer = null;
 let pendingLiveOps = [];
 
+function liveClientId() {
+  const key = 'robyLiveClientId';
+  try {
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = 'c_' + Math.random().toString(36).slice(2, 12);
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch (_) {
+    return 'c_' + Math.random().toString(36).slice(2, 12);
+  }
+}
+
+function liveNormPath(p) {
+  if (!p) return '';
+  return String(p).replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+/** Drop ops aimed at another tab or another open layout. */
+function liveOpsForMe(msg) {
+  if (msg.client && msg.client !== liveClientId()) return false;
+  if (!msg.path) return true;
+  const mine = liveNormPath(state.currentLayoutPath);
+  if (!mine) return false;
+  return liveNormPath(msg.path) === mine;
+}
+
 function liveIsBusy() {
   return !!(typeof drag !== 'undefined' && drag) || !!(typeof vertexDrag !== 'undefined' && vertexDrag);
 }
@@ -97,16 +125,18 @@ function flushPendingLiveOps() {
   if (!pendingLiveOps.length || liveIsBusy()) return;
   const queued = pendingLiveOps;
   pendingLiveOps = [];
-  queued.forEach(applyLiveOps);
+  queued.filter(liveOpsForMe).forEach(applyLiveOps);
 }
 
 function publishLiveState() {
+  if (!liveSource || liveSource.readyState !== EventSource.OPEN) return;
   clearTimeout(liveStateTimer);
   liveStateTimer = setTimeout(() => {
     fetch('/api/live/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        client: liveClientId(),
         path: state.currentLayoutPath,
         canvas: state.canvas,
         layers: state.layers,
@@ -119,10 +149,11 @@ function publishLiveState() {
 
 function initLiveBridge() {
   if (liveSource || typeof EventSource === 'undefined') return;
-  liveSource = new EventSource('/api/live/stream');
+  liveSource = new EventSource('/api/live/stream?client=' + encodeURIComponent(liveClientId()));
   liveSource.addEventListener('patch', (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (!liveOpsForMe(msg)) return;
     // A drag in progress would fight the incoming edit; apply it on mouseup instead.
     if (liveIsBusy()) {
       pendingLiveOps.push(msg);
@@ -134,5 +165,4 @@ function initLiveBridge() {
   });
   liveSource.addEventListener('hello', () => publishLiveState());
   liveSource.onerror = () => { /* EventSource reconnects on its own */ };
-  publishLiveState();
 }

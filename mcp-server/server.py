@@ -20,10 +20,22 @@ mcp = MCPServer(
     name='roby-visual-layout-editor',
     instructions=(
         'Design tools for the Roby Visual Layout Editor. Prefer the live tools when an editor '
-        'is open: the user sees each change immediately and can undo it. Call get_capabilities() '
-        'once to learn the layer types and their fields.'
+        'is open: the user sees each change immediately and can undo it. Always pass path '
+        '(the open .layout.json) on live tools so you only touch that design; other open '
+        'editors stay isolated. Call get_live_state() first; if several sessions are listed, '
+        'pick one by path or client. Call get_capabilities() once to learn the layer types '
+        'and their fields.'
     ),
 )
+
+
+def _live_target(path: str | None, client: str | None) -> dict:
+    out: dict = {}
+    if path:
+        out['path'] = path
+    if client:
+        out['client'] = client
+    return out
 
 
 async def _get(path: str, params: dict | None = None) -> Any:
@@ -52,46 +64,79 @@ async def get_capabilities() -> dict:
 
 
 @mcp.tool()
-async def get_live_state(include_layers: bool = True) -> dict:
-    """Read the layout currently open in the editor, as shown on screen.
+async def get_live_state(
+    path: str | None = None,
+    client: str | None = None,
+    include_layers: bool = True,
+) -> dict:
+    """Read the layout open in an editor, as shown on screen.
 
-    Returns connected=False when no editor is open; use the file tools then.
+    Pass path (preferred) or client when more than one editor is open. Without a filter,
+    a single open editor is returned; multiple editors return sessions[] and ask you to pick.
+    connected=False when nobody is open: use the file tools then.
     """
-    data = await _get('/api/live/state')
+    data = await _get('/api/live/state', _live_target(path, client) or None)
     state = data.get('state')
     if state and not include_layers:
-        state = {**state, 'layers': f"{len(state.get('layers') or [])} layers (omitted)"}
+        n = len(state.get('layers') or [])
+        state = {**state, 'layers': f'{n} layers (omitted)'}
         data = {**data, 'state': state}
     return data
 
 
 @mcp.tool()
-async def patch_live_layers(patches: list[dict], autosave: bool = True) -> dict:
+async def patch_live_layers(
+    patches: list[dict],
+    path: str | None = None,
+    client: str | None = None,
+    autosave: bool = True,
+) -> dict:
     """Change layers in the open editor. The user sees it instantly and can undo with Cmd+Z.
 
+    Pass path to target only that design (required when several editors are open).
     Each patch targets one layer by "id" (preferred) or unique "name", plus the fields to set.
     Example: [{"id": "title", "skewX": -12, "color": "#ffffff"}]
     Use get_capabilities() for the valid fields of each layer type.
     """
-    return await _post('/api/live/patch', {'patches': patches, 'autosave': autosave})
+    return await _post('/api/live/patch', {
+        'patches': patches, 'autosave': autosave, **_live_target(path, client),
+    })
 
 
 @mcp.tool()
-async def add_live_layers(layers: list[dict], autosave: bool = True) -> dict:
+async def add_live_layers(
+    layers: list[dict],
+    path: str | None = None,
+    client: str | None = None,
+    autosave: bool = True,
+) -> dict:
     """Append new layers to the open editor.
 
+    Pass path to target only that design (required when several editors are open).
     Each layer needs at least "type" (text, rect, image, gradient, shape) plus x, y, w, h.
     Missing id and z are filled in automatically.
     Example: [{"type": "shape", "shapeKind": "hexagon", "x": 100, "y": 100, "w": 300, "h": 300,
                "fill": "#eb0029", "corner": 16}]
     """
-    return await _post('/api/live/patch', {'add': layers, 'autosave': autosave})
+    return await _post('/api/live/patch', {
+        'add': layers, 'autosave': autosave, **_live_target(path, client),
+    })
 
 
 @mcp.tool()
-async def remove_live_layers(layer_ids: list[str], autosave: bool = True) -> dict:
-    """Delete layers from the open editor by id. Reversible by the user with Cmd+Z."""
-    return await _post('/api/live/patch', {'remove': layer_ids, 'autosave': autosave})
+async def remove_live_layers(
+    layer_ids: list[str],
+    path: str | None = None,
+    client: str | None = None,
+    autosave: bool = True,
+) -> dict:
+    """Delete layers from the open editor by id. Reversible by the user with Cmd+Z.
+
+    Pass path to target only that design (required when several editors are open).
+    """
+    return await _post('/api/live/patch', {
+        'remove': layer_ids, 'autosave': autosave, **_live_target(path, client),
+    })
 
 
 @mcp.tool()

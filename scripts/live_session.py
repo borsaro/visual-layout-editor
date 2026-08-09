@@ -1,109 +1,165 @@
-"""In-memory bridge between agent tools and the editor open in a browser.
+"""Multi-client live bridge: each editor tab is a session, keyed by client id.
 
-The browser subscribes to /api/live/stream (SSE) and publishes its own state back,
-so agents can read what is actually on screen instead of the file on disk.
+Agents target a layout path (or a specific client). Two people on different
+designs never share patches or on-screen state.
 """
 from __future__ import annotations
 
-import json
 import queue
 import threading
 import time
 
-HEARTBEAT_SECONDS = 20
+from live_ops import ERR_MULTI, ERR_NO_EDITOR, ERR_NO_MATCH
+
 _QUEUE_MAX = 200
 
 
-class LiveSession:
+def norm_path(path) -> str | None:
+    if not path:
+        return None
+    p = str(path).strip().replace('\\', '/')
+    while p.startswith('./'):
+        p = p[2:]
+    return p or None
+
+
+class LiveClient:
+    def __init__(self, client_id: str):
+        self.client_id = client_id
+        self.queue: queue.Queue | None = None
+        self.path: str | None = None
+        self.state: dict | None = None
+        self.updated_at = 0.0
+
+    def summary(self) -> dict:
+        layers = (self.state or {}).get('layers') or []
+        return {
+            'client': self.client_id,
+            'path': self.path,
+            'dirty': bool((self.state or {}).get('dirty')),
+            'canvas': (self.state or {}).get('canvas'),
+            'layer_count': len(layers) if isinstance(layers, list) else 0,
+            'updated_at': self.updated_at,
+            'age_seconds': round(time.time() - self.updated_at, 3) if self.updated_at else None,
+            'listening': self.queue is not None,
+        }
+
+    def full_state(self) -> dict | None:
+        if self.state is None:
+            return None
+        return {**self.state, **self.summary()}
+
+
+class LiveHub:
     def __init__(self):
         self._lock = threading.Lock()
-        self._subscribers: list[queue.Queue] = []
-        self._state: dict | None = None
-        self._updated_at = 0.0
+        self._clients: dict[str, LiveClient] = {}
 
-    def subscribe(self) -> queue.Queue:
+    def subscribe(self, client_id: str) -> queue.Queue:
+        client_id = (client_id or '').strip()
+        if not client_id:
+            raise ValueError('client id required')
         q: queue.Queue = queue.Queue(maxsize=_QUEUE_MAX)
         with self._lock:
-            self._subscribers.append(q)
+            entry = self._clients.get(client_id) or LiveClient(client_id)
+            entry.queue = q
+            self._clients[client_id] = entry
         return q
 
-    def unsubscribe(self, q: queue.Queue) -> None:
+    def unsubscribe(self, client_id: str, q: queue.Queue) -> None:
         with self._lock:
-            if q in self._subscribers:
-                self._subscribers.remove(q)
+            entry = self._clients.get(client_id)
+            if entry and entry.queue is q:
+                del self._clients[client_id]
 
     def client_count(self) -> int:
         with self._lock:
-            return len(self._subscribers)
+            return sum(1 for c in self._clients.values() if c.queue is not None)
 
-    def broadcast(self, event: str, data: dict) -> int:
-        """Fan out to every connected editor. Returns how many queues accepted it."""
+    def set_state(self, client_id: str, payload: dict) -> None:
+        client_id = (client_id or '').strip()
+        if not client_id:
+            raise ValueError('client id required')
         with self._lock:
-            targets = list(self._subscribers)
-        delivered = 0
-        for q in targets:
-            try:
-                q.put_nowait((event, data))
-                delivered += 1
-            except queue.Full:
-                pass
-        return delivered
+            entry = self._clients.get(client_id) or LiveClient(client_id)
+            entry.path = norm_path(payload.get('path'))
+            entry.state = {
+                'path': entry.path,
+                'client': client_id,
+                'canvas': payload.get('canvas'),
+                'layers': payload.get('layers') or [],
+                'selectedIds': payload.get('selectedIds') or [],
+                'dirty': bool(payload.get('dirty')),
+            }
+            entry.updated_at = time.time()
+            self._clients[client_id] = entry
 
-    def set_state(self, state: dict) -> None:
-        with self._lock:
-            self._state = state
-            self._updated_at = time.time()
+    def _match(self, client: str | None, path: str | None) -> list[LiveClient]:
+        cid = (client or '').strip() or None
+        want = norm_path(path)
+        return [
+            e for e in self._clients.values()
+            if (not cid or e.client_id == cid) and (not want or e.path == want)
+        ]
 
-    def get_state(self) -> dict | None:
+    def snapshot(self, *, client: str | None = None, path: str | None = None) -> dict:
         with self._lock:
-            if self._state is None:
-                return None
+            filtered = bool((client or '').strip() or norm_path(path))
+            matches = self._match(client, path)
+            sessions = [c.summary() for c in (matches if filtered else self._clients.values())]
+            listening = sum(1 for c in self._clients.values() if c.queue is not None)
+            state = None
+            error = None
+            if len(matches) == 1:
+                state = matches[0].full_state()
+            elif len(matches) > 1 and filtered:
+                newest = max(matches, key=lambda c: c.updated_at)
+                state = newest.full_state()
+            elif len(matches) > 1:
+                error = ERR_MULTI
+            elif filtered:
+                error = ERR_NO_MATCH
             return {
-                **self._state,
-                'updated_at': self._updated_at,
-                'age_seconds': round(time.time() - self._updated_at, 3),
-                'clients': len(self._subscribers),
+                'ok': True,
+                'connected': listening > 0,
+                'sessions': sessions,
+                'state': state,
+                'error': error,
             }
 
+    def resolve_targets(self, *, client: str | None = None, path: str | None = None):
+        with self._lock:
+            listening = [c for c in self._clients.values() if c.queue is not None]
+            if not listening:
+                return [], ERR_NO_EDITOR
+            filtered = bool((client or '').strip() or norm_path(path))
+            matches = [c for c in self._match(client, path) if c.queue is not None]
+            if not filtered:
+                if len(listening) == 1:
+                    return listening, None
+                return [], ERR_MULTI
+            if not matches:
+                return [], ERR_NO_MATCH
+            return matches, None
 
-SESSION = LiveSession()
+    def broadcast(self, event: str, data: dict, *, client: str | None = None,
+                  path: str | None = None) -> dict:
+        targets, error = self.resolve_targets(client=client, path=path)
+        if error:
+            return {'ok': False, 'delivered_to': 0, 'clients': [], 'error': error}
+        delivered = []
+        for entry in targets:
+            try:
+                entry.queue.put_nowait((event, data))
+                delivered.append(entry.client_id)
+            except (queue.Full, AttributeError):
+                pass
+        return {
+            'ok': bool(delivered),
+            'delivered_to': len(delivered),
+            'clients': delivered,
+            'error': None if delivered else ERR_NO_EDITOR,
+        }
 
 
-def sse_frame(event: str, data: dict) -> bytes:
-    return f'event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n'.encode('utf-8')
-
-
-def sse_heartbeat() -> bytes:
-    return b': ping\n\n'
-
-
-def _validated_patches(patches) -> list[dict]:
-    out = []
-    for i, patch in enumerate(patches):
-        if not isinstance(patch, dict):
-            raise ValueError(f'patches[{i}] must be an object')
-        if not patch.get('id') and not patch.get('name'):
-            raise ValueError(f'patches[{i}] needs id or name to target a layer')
-        out.append(patch)
-    return out
-
-
-def _validated_layers(layers) -> list[dict]:
-    out = []
-    for i, layer in enumerate(layers):
-        if not isinstance(layer, dict):
-            raise ValueError(f'add[{i}] must be a layer object')
-        if not layer.get('type'):
-            raise ValueError(f'add[{i}] needs a type (text, rect, image, gradient, shape)')
-        out.append(layer)
-    return out
-
-
-def build_live_ops(payload: dict) -> dict:
-    """One live message can patch, add and remove layers; at least one must be present."""
-    patches = _validated_patches(payload.get('patches') or [])
-    add = _validated_layers(payload.get('add') or [])
-    remove = [str(x) for x in (payload.get('remove') or []) if x]
-    if not patches and not add and not remove:
-        raise ValueError('Nothing to do: provide patches[], add[] or remove[]')
-    return {'patches': patches, 'add': add, 'remove': remove}
+SESSION = LiveHub()
