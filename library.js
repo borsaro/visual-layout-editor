@@ -6,6 +6,8 @@ state.libraryItemsReady = false;
 
 let libraryLoadId = 0;
 let libraryScrollTimer = null;
+/** Until this timestamp, scroll events are ours (scrollIntoView) and must not move focus. */
+let libraryOwnScrollUntil = 0;
 const PREVIEW_MAX = 2;
 let previewActive = 0;
 const previewWait = [];
@@ -291,7 +293,12 @@ function focusLibraryItem(key, opts = {}){
     const el = [...grid.querySelectorAll('[data-lib-key]')].find(n => n.dataset.libKey === key);
     if(el){
       el.classList.add('focused');
-      if(opts.scroll !== false) el.scrollIntoView({ block: 'nearest' });
+      if(opts.scroll !== false){
+        // Claim the scroll events this is about to fire, so the scroll handler does not
+        // read them back as "the user scrolled" and drag focus somewhere else.
+        libraryOwnScrollUntil = Date.now() + 300;
+        el.scrollIntoView({ block: 'nearest' });
+      }
     }
   }
   const item = findLibraryItemByKey(key);
@@ -492,12 +499,27 @@ function bindLibraryListScroll(){
   });
 }
 
+/**
+ * Keep focus sensible when the user scrolls with wheel or scrollbar.
+ * It must not touch focus while the focused row is still on screen: arrow-key stepping
+ * scrolls the list, and re-deriving focus from the scroll position would yank it back
+ * to whatever sits at the top — which is what made the list jump to the first item as
+ * soon as it started scrolling.
+ */
 function syncFocusFromScroll(){
   const grid = $('layoutGrid');
   if(!grid || state.libraryViewMode !== 'list') return;
+  if(Date.now() < libraryOwnScrollUntil) return;
   const rows = [...grid.querySelectorAll('.libraryRow[data-lib-key]')];
   if(!rows.length) return;
-  const top = grid.getBoundingClientRect().top + 28;
+
+  const box = grid.getBoundingClientRect();
+  const focused = rows.find(r => r.dataset.libKey === state.libraryFocusKey);
+  if(focused){
+    const r = focused.getBoundingClientRect();
+    if(r.bottom > box.top && r.top < box.bottom) return; // ancora in vista: non toccarlo
+  }
+  const top = box.top + 28;
   let best = null;
   let bestDist = Infinity;
   rows.forEach(row => {
