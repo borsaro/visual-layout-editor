@@ -1781,7 +1781,7 @@ function init(){
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
   $('librarySearch').oninput=renderLibraryGrid;
-  $('libraryKindFilter').onchange=renderLibraryGrid;
+  $('libraryKindFilter').onchange=() => (typeof onLibraryKindFilterChange === 'function' ? onLibraryKindFilterChange() : renderLibraryGrid());
   document.querySelectorAll('[data-align-action]').forEach(btn=>btn.onclick=()=>alignSelectedLayers(btn.dataset.alignAction));
   document.querySelectorAll('[data-canvas-align]').forEach(btn=>btn.onclick=()=>alignSelectedToCanvas(btn.dataset.canvasAlign));
   $('deleteBtn').onclick=()=>{

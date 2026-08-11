@@ -36,13 +36,36 @@ function syncLibraryViewChrome(){
   if(btn) btn.textContent = state.libraryViewMode === 'list' ? 'Vista griglia' : 'Vista lista';
 }
 
+/** "Solo JSON" hides images anyway, so there is no reason to make the server find them. */
+function libraryWantsImages(){
+  return ($('libraryKindFilter')?.value || 'layout') !== 'layout';
+}
+
 async function fetchLibraryPhase(folder, phase){
   const folderParam = encodeURIComponent(folder || '');
+  const wantImages = libraryWantsImages();
   const res = await fetch(
-    '/api/list-layouts?folder=' + folderParam + '&phase=' + phase + '&light=1&ts=' + Date.now(),
+    '/api/list-layouts?folder=' + folderParam + '&phase=' + phase + '&light=1'
+      + (wantImages ? '' : '&include_images=0')
+      + '&ts=' + Date.now(),
     { cache: 'no-store' }
   );
-  return res.json();
+  const payload = await res.json();
+  if(phase !== 'folders') state.libraryLoadedWithImages = wantImages;
+  return payload;
+}
+
+/**
+ * Switching to a filter that needs images has to go back to the server, because the
+ * last listing was told not to look for them. Narrowing the filter does not: the
+ * client already has everything it needs to hide them.
+ */
+function onLibraryKindFilterChange(){
+  if(libraryWantsImages() && state.libraryLoadedWithImages === false){
+    refreshLayoutLibrary().catch(e => showToast('Libreria: ' + (e.message || e)));
+    return;
+  }
+  renderLibraryGrid();
 }
 
 async function refreshLayoutLibrary(){
