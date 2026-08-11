@@ -246,6 +246,60 @@ async def delete_variants(path: str, variant_ids: list[str]) -> dict:
     return await _post('/api/variants/delete', {'path': path, 'ids': variant_ids})
 
 
+@mcp.tool()
+async def remove_background(
+    path: str,
+    model: str | None = None,
+    out: str | None = None,
+    layout: str | None = None,
+    layer_id: str | None = None,
+    alpha_matting: bool = True,
+    decontaminate: float = 0.8,
+    feather: float = 0.0,
+) -> dict:
+    """Cut the subject out of an image; writes <name>-cutout.png beside the source.
+
+    The original file is never touched. The mask is upscaled back to the source
+    resolution and the old background's colour is bled out of the soft edge, so the
+    cutout composites cleanly on any new background.
+
+    model: birefnet-general (default, best all-round), birefnet-portrait (people and
+    hair), birefnet-general-lite (much faster, slightly coarser edges). Weights
+    download on first use (927/927/213 MB) into a mounted volume, so expect the very
+    first call per model to take minutes; after that, seconds.
+
+    Pass layout + layer_id to also repoint that layer's src at the cutout in the same
+    call. Inference is CPU-bound: on large images a call can take tens of seconds.
+    """
+    payload: dict = {
+        'path': path,
+        'alpha_matting': alpha_matting,
+        'decontaminate': decontaminate,
+        'feather': feather,
+    }
+    if model:
+        payload['model'] = model
+    if out:
+        payload['out'] = out
+    if layout and layer_id:
+        payload.update(layout=layout, layer_id=layer_id)
+    # First use downloads up to ~1 GB of weights and CPU inference is slow: the
+    # global 30 s timeout would kill exactly the calls this tool exists for.
+    timeout = float(os.environ.get('ROBY_BG_TIMEOUT', '900'))
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        res = await client.post(f'{EDITOR_URL}/api/remove-background', json=payload)
+        try:
+            return res.json()
+        except json.JSONDecodeError:
+            return {'ok': False, 'error': f'HTTP {res.status_code}: {res.text[:200]}'}
+
+
+@mcp.tool()
+async def list_bg_models() -> dict:
+    """Background-removal models: id, size, what each is best at, downloaded or not."""
+    return await _post('/api/bg-models', {})
+
+
 def _transport_security() -> TransportSecuritySettings | None:
     """Host allowlist for the HTTP transport.
 

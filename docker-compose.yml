@@ -15,11 +15,15 @@ services:
       # Docker File Sharing allows /Users (+ /Volumes) only — skip /System and /Library
       ROBY_LAYOUT_FONTS_ROOT: "/host-fonts/user"
       PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright"
+      # Background-removal weights live on this mount, downloaded on first use, so a
+      # rebuild never re-downloads ~1 GB models
+      ROBY_BG_MODELS_DIR: "/bg-models"
     shm_size: "512mb"
     volumes:
       - .:/app
       - ${ROBY_LAYOUT_CAMPAIGNS_HOST_PATH:-/Users/admin/Desktop/HermesRack/SOCIAL-MEDIA-MANAGER}:/campaigns
       - ${HOME}/Library/Fonts:/host-fonts/user:ro
+      - roby-bg-models:/bg-models
     healthcheck:
       test:
         [
@@ -67,3 +71,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+volumes:
+  roby-bg-models:

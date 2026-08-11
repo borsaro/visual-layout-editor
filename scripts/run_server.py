@@ -577,6 +577,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/variants',
             '/api/variants/promote',
             '/api/variants/delete',
+            '/api/remove-background',
+            '/api/bg-models',
         ]:
             self.send_error(404, 'Unknown API endpoint')
             return
@@ -702,6 +704,46 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     if vp.exists():
                         vp.unlink()
                 self._json(200, {'ok': True, 'removed': sorted(drop), 'remaining': len(kept)})
+                return
+
+            if parsed.path == '/api/remove-background':
+                from bg_remove import cutout_output_path, remove_background_file
+                image_path = resolve_allowed_image(payload.get('path'))
+                out_path = cutout_output_path(image_path, payload.get('out'))
+                if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                    raise ValueError(f'Output outside allowed roots: {out_path}')
+                info = remove_background_file(
+                    image_path,
+                    out_path,
+                    model=payload.get('model'),
+                    alpha_matting=bool(payload.get('alpha_matting', True)),
+                    decontaminate=float(payload.get('decontaminate', 0.8)),
+                    feather=float(payload.get('feather', 0)),
+                )
+                body = {
+                    'ok': True,
+                    'source': public_path(image_path),
+                    'path': public_path(out_path),
+                    'src': asset_src_for(out_path),
+                    **info,
+                }
+                # Optionally repoint a layer at the cutout, in the same request. The
+                # original file on disk is never touched either way.
+                layout_rel = payload.get('layout')
+                layer_id = payload.get('layer_id')
+                if layout_rel and layer_id:
+                    target = resolve_allowed_layout(layout_rel)
+                    layout = json.loads(target.read_text(encoding='utf-8'))
+                    from patch_layers import apply_patches
+                    apply_patches(layout, [{'id': layer_id, 'src': asset_src_for(out_path)}])
+                    target.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding='utf-8')
+                    body['layout_patched'] = public_path(target)
+                self._json(200, body)
+                return
+
+            if parsed.path == '/api/bg-models':
+                from bg_remove import catalog_payload
+                self._json(200, {'ok': True, **catalog_payload()})
                 return
 
             if parsed.path == '/api/patch-layers':

@@ -181,6 +181,8 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 | `POST` | `/api/variants` | Save variants {path, variants:[{id,label,axes,ops}], replace?, thumbnails?} |
 | `POST` | `/api/variants/promote` | Bake one variant into its own layout {path, id, filename?} |
 | `POST` | `/api/variants/delete` | Drop variants from the set {path, ids:[]} |
+| `POST` | `/api/remove-background` | Cut subject out of an image {path, model?, out?, layout?, layer_id?, alpha_matting?, decontaminate?, feather?} → writes <name>-cutout.png beside the source |
+| `POST` | `/api/bg-models` | Background-removal model catalog: sizes, licences, downloaded state |
 | `GET` | `/api/file` | Serve image bytes?path= (_assets/… or campaign-relative) |
 | `GET` | `/api/fonts` | List host Font Book families (Docker-mounted Mac fonts) |
 | `GET` | `/api/font-file` | Serve one host font file?id= |

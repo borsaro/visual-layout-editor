@@ -926,6 +926,7 @@ function bindProps(){
   bindShapeProps();
   bindSvgTintProps();
   bindWarpProps();
+  bindBgRemove?.();
   document.querySelectorAll('[data-style-toggle]').forEach((btn)=>{
     btn.onclick=()=>{
       const key=btn.dataset.styleToggle;

@@ -10,6 +10,8 @@ ENDPOINTS = [
     {'method': 'POST', 'path': '/api/variants', 'desc': 'Save variants {path, variants:[{id,label,axes,ops}], replace?, thumbnails?}'},
     {'method': 'POST', 'path': '/api/variants/promote', 'desc': 'Bake one variant into its own layout {path, id, filename?}'},
     {'method': 'POST', 'path': '/api/variants/delete', 'desc': 'Drop variants from the set {path, ids:[]}'},
+    {'method': 'POST', 'path': '/api/remove-background', 'desc': 'Cut subject out of an image {path, model?, out?, layout?, layer_id?, alpha_matting?, decontaminate?, feather?} → writes <name>-cutout.png beside the source'},
+    {'method': 'POST', 'path': '/api/bg-models', 'desc': 'Background-removal model catalog: sizes, licences, downloaded state'},
     {'method': 'GET', 'path': '/api/file', 'desc': 'Serve image bytes?path= (_assets/… or campaign-relative)'},
     {'method': 'GET', 'path': '/api/fonts', 'desc': 'List host Font Book families (Docker-mounted Mac fonts)'},
     {'method': 'GET', 'path': '/api/font-file', 'desc': 'Serve one host font file?id='},

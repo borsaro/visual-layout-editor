@@ -319,6 +319,12 @@
           </label>
           <button type="button" id="propImageSrcApply" class="wide">Applica path</button>
           <p id="imageSrcHint" class="muted hint">Path relativo alla root campagne (es. _assets/fuoco/file.png).</p>
+          <h3 class="propSubhead">Scontorno</h3>
+          <label>Modello
+            <select id="propBgModel"></select>
+          </label>
+          <button type="button" id="propBgRemoveBtn" class="wide">Rimuovi sfondo</button>
+          <p id="bgRemoveHint" class="muted hint">Crea un PNG scontornato accanto all'originale e lo usa in questo layer. L'originale non viene toccato.</p>
           <h3 class="propSubhead">Colore immagine</h3>
           <div class="grid2">
             <label>Luminosità <input id="propBright" type="number" min="-100" max="100" step="1" value="0"></label>
@@ -449,6 +455,7 @@
   <script src="./asset-src.js?v=20260719-assets"></script>
   <script src="./gradient.js?v=20260719-gradient"></script>
   <script src="./svg-tint.js?v=20260807-svgtint"></script>
+  <script src="./bg-remove-panel.js?v=20260811-bgremove"></script>
   <script src="./warp.js?v=20260807-warp"></script>
   <script src="./warp-editor.js?v=20260807-warp"></script>
   <script src="./shapes.js?v=20260807-shapes"></script>
