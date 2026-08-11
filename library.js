@@ -329,25 +329,71 @@ async function copySelectedLibraryPaths(){
   }
 }
 function updateBulkExportButton(){ updateBulkActionButtons(); }
+/**
+ * Which of the three states the current selection matches.
+ *
+ * Derived from the selection rather than a click counter, so the cycle stays right
+ * when items are ticked by hand in between: what the button does next always follows
+ * from what is actually selected.
+ */
+function librarySelectAllState(){
+  const visible = visibleLibraryItems().filter(it => librarySelectPath(it));
+  const files = visible.filter(it => it.kind !== 'folder');
+  const folders = visible.filter(it => it.kind === 'folder');
+  const sel = (it) => isLibrarySelected(librarySelectPath(it));
+  const allFiles = files.length > 0 && files.every(sel);
+  const allFolders = folders.length > 0 && folders.every(sel);
+  const anySelected = visible.some(sel);
+
+  let stage;                       // what the NEXT click will do
+  // A partial selection completes rather than clears: that is what an indeterminate
+  // checkbox does everywhere else, and clearing someone's half-made selection by
+  // accident is the more expensive mistake.
+  if(!allFiles) stage = 'files';
+  else if(folders.length && !allFolders) stage = 'all';
+  else stage = 'none';
+  return { visible, files, folders, allFiles, allFolders, anySelected, stage };
+}
+
 function updateSelectAllControl(){
   const cb = $('librarySelectAllCheckbox');
   const txt = $('librarySelectAllText');
   if(!cb || !txt) return;
-  const visible = visibleLibraryItems().filter(it => librarySelectPath(it));
-  const selectedVisible = visible.filter(it => isLibrarySelected(librarySelectPath(it))).length;
-  cb.disabled = visible.length === 0;
-  cb.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
-  cb.checked = visible.length > 0 && selectedVisible === visible.length;
-  txt.textContent = cb.checked
-    ? `Deseleziona tutto (${visible.length})`
-    : (selectedVisible ? `Selezionati ${selectedVisible}/${visible.length}` : 'Seleziona tutto');
+  const s = librarySelectAllState();
+  const selectedVisible = s.visible.filter(it => isLibrarySelected(librarySelectPath(it))).length;
+  cb.disabled = s.visible.length === 0;
+  cb.indeterminate = selectedVisible > 0 && selectedVisible < s.visible.length;
+  cb.checked = s.visible.length > 0 && selectedVisible === s.visible.length;
+  // The label names the next click, not the current state: this control cycles, and a
+  // cycling control that describes where it is leaves you guessing where it goes.
+  txt.textContent = s.stage === 'files'
+    ? (s.folders.length ? `Seleziona i ${s.files.length} file` : `Seleziona tutto (${s.files.length})`)
+    : (s.stage === 'all'
+      ? `Aggiungi ${s.folders.length} cartelle`
+      : `Deseleziona tutto (${selectedVisible})`);
 }
+
+/** File → file + cartelle → niente. */
+function cycleLibrarySelection(){
+  const s = librarySelectAllState();
+  if(!s.visible.length) return;
+  const set = (items, on) => items.forEach(it => setLibrarySelected(librarySelectPath(it), on));
+  if(s.stage === 'files'){
+    set(s.files, true);
+    set(s.folders, false);
+  } else if(s.stage === 'all'){
+    set(s.visible, true);
+  } else {
+    set(s.visible, false);
+  }
+  renderLibraryGrid();
+}
+
 function toggleVisibleLibrarySelection(forceChecked = null){
   const visible = visibleLibraryItems().filter(it => librarySelectPath(it));
   if(!visible.length) return;
-  const allSelected = visible.every(it => isLibrarySelected(librarySelectPath(it)));
-  const next = forceChecked === null ? !allSelected : !!forceChecked;
-  visible.forEach(it => setLibrarySelected(librarySelectPath(it), next));
+  if(forceChecked === null){ cycleLibrarySelection(); return; }
+  visible.forEach(it => setLibrarySelected(librarySelectPath(it), !!forceChecked));
   renderLibraryGrid();
 }
 

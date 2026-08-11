@@ -1824,7 +1824,8 @@ function init(){
       showToast('Copia fallita: ' + (e.message || e));
     }
   });
-  $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
+  // Three-state cycle: the checkbox's own checked value is meaningless here.
+  $('librarySelectAllCheckbox').onchange=()=>cycleLibrarySelection();
   $('librarySearch').oninput=renderLibraryGrid;
   $('libraryKindFilter').onchange=() => (typeof onLibraryKindFilterChange === 'function' ? onLibraryKindFilterChange() : renderLibraryGrid());
   document.querySelectorAll('[data-align-action]').forEach(btn=>btn.onclick=()=>alignSelectedLayers(btn.dataset.alignAction));
