@@ -181,6 +181,10 @@ function zoomToFit(){
   if(range) range.value = state.zoom;
   const label = $('zoomLabel');
   if(label) label.textContent = Math.round(state.zoom) + '%';
+  // Fit is about the artboard, not overflowing layers: those only extend the
+  // scrollable area. But scroll position survives a file change, so without this
+  // reset the new file could open staring at the previous file's overflow.
+  scroller.scrollTo(0, 0);
 }
 
 /** @param {{ skipProps?: boolean }} [opts] skipProps: keep props/select focus (font arrow browse) */
