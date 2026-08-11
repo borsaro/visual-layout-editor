@@ -1780,6 +1780,7 @@ function init(){
   $('libraryViewToggleBtn')?.addEventListener('click', ()=>setLibraryViewMode(state.libraryViewMode === 'list' ? 'grid' : 'list'));
   $('bulkExportBtn').onclick=exportSelectedLayouts;
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
+  $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
   $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
   $('librarySearch').oninput=renderLibraryGrid;
   $('libraryKindFilter').onchange=() => (typeof onLibraryKindFilterChange === 'function' ? onLibraryKindFilterChange() : renderLibraryGrid());

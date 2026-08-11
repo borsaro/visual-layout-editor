@@ -295,7 +295,28 @@ function updateBulkActionButtons(){
     delBtn.disabled = count === 0;
     delBtn.textContent = count ? `Cancella selezionati (${count})` : 'Cancella selezionati';
   }
+  const copyBtn = $('bulkCopyPathsBtn');
+  if(copyBtn){
+    copyBtn.disabled = count === 0;
+    copyBtn.textContent = count ? `Copia (${count})` : 'Copia';
+  }
   updateSelectAllControl();
+}
+
+/** Selected paths, one per line, ready to paste in a chat as references. */
+async function copySelectedLibraryPaths(){
+  const entries = selectedLibraryEntries();
+  if(!entries.length){ showToast('Nessun elemento selezionato'); return; }
+  // Library order, not click order: a pasted list should read like the list on screen.
+  const lines = entries.map(it => librarySelectPath(it)).filter(Boolean);
+  try{
+    await copyTextToClipboard(lines.join('\n'));
+    showToast(lines.length === 1
+      ? 'Percorso copiato: ' + lines[0]
+      : `${lines.length} percorsi copiati (uno per riga)`);
+  }catch(e){
+    showToast('Copia fallita: ' + (e.message || e));
+  }
 }
 function updateBulkExportButton(){ updateBulkActionButtons(); }
 function updateSelectAllControl(){
