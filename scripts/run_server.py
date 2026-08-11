@@ -386,7 +386,11 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 items = []
                 if phase in ('folders', 'all') and CAMPAIGNS_ROOT.exists() and folder.exists():
                     for child in sorted(
-                        [x for x in folder.iterdir() if x.is_dir() and not x.name.startswith('.')],
+                        # `<layout>.variants/` holds variant thumbnails next to their
+                        # layout. It is a sidecar, not a project: listing it would put a
+                        # browsable folder in the library that nobody should open.
+                        [x for x in folder.iterdir()
+                         if x.is_dir() and not x.name.startswith('.') and not x.name.endswith('.variants')],
                         key=lambda x: x.name.lower(),
                     ):
                         folders.append(folder_meta(child))
