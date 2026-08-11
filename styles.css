@@ -74,7 +74,7 @@
 .libraryRowTitle{min-width:0;display:flex;flex-direction:column;gap:2px}
 .libraryRowTitle strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .libraryRowTitle small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.libraryRowOpen{padding:6px 10px;font-size:12px;white-space:nowrap}.libraryRowReload{padding:6px 9px;font-size:13px;line-height:1;white-space:nowrap}.libraryRowReload:disabled{opacity:.5;cursor:progress}.libraryRowReload.isBusy{animation:robySpin .9s linear infinite}@keyframes robySpin{to{transform:rotate(360deg)}}
+.libraryRowOpen{padding:6px 10px;font-size:12px;white-space:nowrap}.librarySkipped{display:block;margin-top:4px;color:#ffb457}.libraryRowReload{padding:6px 9px;font-size:13px;line-height:1;white-space:nowrap}.libraryRowReload:disabled{opacity:.5;cursor:progress}.libraryRowReload.isBusy{animation:robySpin .9s linear infinite}@keyframes robySpin{to{transform:rotate(360deg)}}
 
 /* Layer sidebar: keep canvas controls visible and scroll only the layer window */
 .panel.left{display:flex!important;flex-direction:column!important;overflow:hidden!important;min-height:0!important}.panel.left .layers{flex:1 1 auto!important;min-height:120px!important;overflow-y:auto!important;overflow-x:hidden!important;padding-right:4px!important;scrollbar-width:thin!important;scrollbar-color:var(--accent) #0f1116!important}.panel.left .layers::-webkit-scrollbar{width:8px}.panel.left .layers::-webkit-scrollbar-track{background:#0f1116;border-radius:10px}.panel.left .layers::-webkit-scrollbar-thumb{background:var(--accent);border-radius:10px}

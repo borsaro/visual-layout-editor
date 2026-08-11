@@ -98,6 +98,16 @@ async function refreshLayoutLibrary(){
     const folderLabel = state.currentLibraryFolder ? `/${state.currentLibraryFolder}` : '/';
     const root = itemsPayload.campaigns_root || state.campaignsRoot || '';
     meta.textContent = `root: ${root} · ${state.libraryFolders.length} cartelle · ${itemsPayload.count} elementi in ${folderLabel} · ${layouts} layout · ${images} immagini`;
+    // Unreadable entries no longer sink the listing, but they must not vanish quietly
+    // either: a file the user can see in Finder would just be missing here.
+    const skipped = [...(foldersPayload.skipped || []), ...(itemsPayload.skipped || [])];
+    if(skipped.length){
+      const warn = document.createElement('small');
+      warn.className = 'librarySkipped';
+      warn.textContent = `⚠ ${skipped.length} non leggibili (link rotti?): ${skipped.slice(0, 3).join(', ')}${skipped.length > 3 ? '…' : ''}`;
+      warn.title = skipped.join('\n');
+      meta.appendChild(warn);
+    }
   }
   renderLibraryGrid();
   ensureLibraryFocus();

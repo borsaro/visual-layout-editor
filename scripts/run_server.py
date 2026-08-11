@@ -142,6 +142,26 @@ def resolve_campaign_folder(raw: str) -> Path:
     return p
 
 
+def safe_mtime(path: Path):
+    """mtime, or None when the entry cannot be read — a dangling symlink, typically."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def rel_path_for_error(path: Path) -> str:
+    """Name the entry the user sees, not what it points at.
+
+    public_path() resolves first, so on a dangling symlink it would report the missing
+    target — the one name that is no help in finding the file to fix.
+    """
+    try:
+        return path.relative_to(CAMPAIGNS_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def folder_meta(path: Path):
     """Light folder row — no recursive rglob counts (those made root listing very slow)."""
     rel, scope = rel_scope(path)
@@ -384,6 +404,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 folder = resolve_campaign_folder(folder_rel)
                 folders = []
                 items = []
+                skipped_entries: list[str] = []
                 if phase in ('folders', 'all') and CAMPAIGNS_ROOT.exists() and folder.exists():
                     for child in sorted(
                         # `<layout>.variants/` holds variant thumbnails next to their
@@ -393,7 +414,10 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                          if x.is_dir() and not x.name.startswith('.') and not x.name.endswith('.variants')],
                         key=lambda x: x.name.lower(),
                     ):
-                        folders.append(folder_meta(child))
+                        try:
+                            folders.append(folder_meta(child))
+                        except OSError:
+                            skipped_entries.append(rel_path_for_error(child))
                 if phase in ('items', 'all') and folder.exists():
                     # Root: direct files only. Inside a project: recursive gallery.
                     walker = folder.rglob if folder_rel else folder.glob
@@ -401,16 +425,35 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     if include_images:
                         for ext in IMAGE_EXTS:
                             files.extend(walker(f'*{ext}'))
+                    # Sorting on stat() blew the whole listing up on the first unreadable
+                    # entry — a symlink pointing at a host path that does not exist inside
+                    # the container is enough. One bad file must not cost the gallery.
+                    dated = []
+                    for p in files:
+                        mtime = safe_mtime(p)
+                        if mtime is None:
+                            skipped_entries.append(rel_path_for_error(p))
+                            continue
+                        dated.append((mtime, p))
+                    dated.sort(key=lambda pair: pair[0], reverse=True)
+
                     seen = set()
-                    for p in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
-                        rp = p.resolve()
+                    for _, p in dated:
+                        try:
+                            rp = p.resolve()
+                        except OSError:
+                            skipped_entries.append(rel_path_for_error(p))
+                            continue
                         if rp in seen or not any(under(rp, r) for r in ALLOWED_ROOTS):
                             continue
                         seen.add(rp)
-                        if rp.name.endswith('.layout.json'):
-                            items.append(layout_meta(rp, light=light))
-                        elif rp.suffix.lower() in IMAGE_EXTS:
-                            items.append(image_meta(rp, light=light))
+                        try:
+                            if rp.name.endswith('.layout.json'):
+                                items.append(layout_meta(rp, light=light))
+                            elif rp.suffix.lower() in IMAGE_EXTS:
+                                items.append(image_meta(rp, light=light))
+                        except OSError:
+                            skipped_entries.append(rel_path_for_error(rp))
                 parent = ''
                 if folder_rel:
                     parent = '/'.join(folder_rel.split('/')[:-1])
@@ -424,6 +467,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'folder_count': len(folders),
                     'count': len(items),
                     'items': items,
+                    # Surfaced, not swallowed: the UI can say what it could not read.
+                    'skipped': skipped_entries,
                 })
                 return
             if parsed.path == '/api/load-layout':
