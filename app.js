@@ -1812,6 +1812,7 @@ function init(){
   $('bulkExportBtn').onclick=exportSelectedLayouts;
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
+  $('bulkRefreshThumbsBtn')?.addEventListener('click', ()=>refreshSelectedThumbs());
   // Delegated: updateCanvasInfo rebuilds the span on every render, so the handler
   // must live on the stable parent.
   $('canvasInfo')?.addEventListener('click', async (ev)=>{

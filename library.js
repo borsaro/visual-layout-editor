@@ -8,6 +8,8 @@ let libraryLoadId = 0;
 let libraryScrollTimer = null;
 /** Until this timestamp, scroll events are ours (scrollIntoView) and must not move focus. */
 let libraryOwnScrollUntil = 0;
+/** While a bulk thumbnail run is going, its button shows progress and nothing else may relabel it. */
+let bulkThumbsRunning = false;
 const PREVIEW_MAX = 2;
 let previewActive = 0;
 const previewWait = [];
@@ -299,6 +301,14 @@ function updateBulkActionButtons(){
   if(copyBtn){
     copyBtn.disabled = count === 0;
     copyBtn.textContent = count ? `Copia (${count})` : 'Copia';
+  }
+  const thumbsBtn = $('bulkRefreshThumbsBtn');
+  if(thumbsBtn && !bulkThumbsRunning){
+    // Only layouts have a preview sidecar to redraw, so images in the selection
+    // must not make the button look available.
+    const layoutCount = selectedLibraryEntries().filter(it => it.kind === 'layout').length;
+    thumbsBtn.disabled = layoutCount === 0;
+    thumbsBtn.textContent = layoutCount ? `Rigenera anteprime (${layoutCount})` : 'Rigenera anteprime';
   }
   updateSelectAllControl();
 }
@@ -969,33 +979,69 @@ async function uploadCurrentLayoutPreview(){
  * The fonts it uses may not be loaded in this page yet, and a preview rendered with
  * a fallback face would look wrong in a way that is easy to mistake for a real change.
  */
-async function regenerateLayoutPreview(item, btn){
+/** Redraw one layout's sidecar from the JSON on disk. Throws so callers can count failures. */
+async function renderAndPersistPreview(item){
   const path = item?.path || item?.rel;
-  if(!path) return;
+  if(!path) throw new Error('percorso mancante');
+  const res = await fetch('/api/load-layout?path=' + encodeURIComponent(path), { cache: 'no-store' });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || 'load failed');
+  const layout = data.layout;
+  await loadHostFonts?.();
+  await ensureLayoutCustomFonts?.(layout.layers || []);
+  const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
+  await Promise.all([...families].map(f => waitForFont?.(f, 4000)));
+  try { await document.fonts.ready; } catch(_){}
+
+  const canvas = await renderLayoutPreviewCanvas(layout);
+  await persistLayoutPreview(path, canvas);
+  // Sidecars are served with a long cache, so the new bytes need a fresh URL.
+  item.mtime = Math.floor(Date.now() / 1000);
+  refreshLibraryRowPreview(item);
+}
+
+async function regenerateLayoutPreview(item, btn){
   const previous = btn ? btn.textContent : null;
   if(btn){ btn.disabled = true; btn.classList.add('isBusy'); }
   try{
-    const res = await fetch('/api/load-layout?path=' + encodeURIComponent(path), { cache: 'no-store' });
-    const data = await res.json();
-    if(!data.ok) throw new Error(data.error || 'load failed');
-    const layout = data.layout;
-    await loadHostFonts?.();
-    await ensureLayoutCustomFonts?.(layout.layers || []);
-    const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
-    await Promise.all([...families].map(f => waitForFont?.(f, 4000)));
-    try { await document.fonts.ready; } catch(_){}
-
-    const canvas = await renderLayoutPreviewCanvas(layout);
-    await persistLayoutPreview(path, canvas);
-    // Sidecars are served with a long cache, so the new bytes need a fresh URL.
-    item.mtime = Math.floor(Date.now() / 1000);
-    refreshLibraryRowPreview(item);
-    showToast('Anteprima rigenerata: ' + (item.name || path));
+    await renderAndPersistPreview(item);
+    showToast('Anteprima rigenerata: ' + (item.name || item.path));
   }catch(e){
     showToast('Rigenerazione anteprima fallita: ' + (e.message || e));
   }finally{
     if(btn){ btn.disabled = false; btn.classList.remove('isBusy'); if(previous !== null) btn.textContent = previous; }
   }
+}
+
+/**
+ * Redraw every selected layout's thumbnail.
+ * Sequential on purpose: each one renders a full-size canvas in this page, so running
+ * them at once would fight for the same main thread and finish no sooner, while making
+ * the progress count meaningless.
+ */
+async function refreshSelectedThumbs(){
+  const layouts = selectedLibraryEntries().filter(it => it.kind === 'layout');
+  if(!layouts.length){ showToast('Nessun layout selezionato'); return; }
+  const btn = $('bulkRefreshThumbsBtn');
+  bulkThumbsRunning = true;
+  if(btn) btn.disabled = true;
+  let done = 0;
+  const failed = [];
+  for(const item of layouts){
+    if(btn) btn.textContent = `Anteprime ${done + 1}/${layouts.length}…`;
+    try{
+      await renderAndPersistPreview(item);
+      done += 1;
+    }catch(e){
+      failed.push(item.name || item.path);
+    }
+  }
+  bulkThumbsRunning = false;
+  if(btn) btn.disabled = false;
+  updateBulkActionButtons();
+  showToast(failed.length
+    ? `${done} anteprime rigenerate, ${failed.length} fallite: ${failed.slice(0, 3).join(', ')}`
+    : `${done} anteprime rigenerate`);
 }
 
 /**
