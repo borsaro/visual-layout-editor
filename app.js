@@ -152,12 +152,35 @@ function nextZ(){ return state.layers.length ? Math.max(...state.layers.map(l=>N
 
 function updateCanvasInfo(){
   const selCount = state.selectedIds.length ? ` · ${state.selectedIds.length} selezionati` : '';
-  const fileInfo = ` · ${currentFileLabel()}`;
+  // The name is clickable when a server path exists: one click copies the full
+  // campaign-relative path, ready to paste in a chat as a reference.
+  const fileInfo = state.currentLayoutPath
+    ? ` · <span class="fileRefCopy" title="Clicca per copiare il percorso: ${escapeHtml(state.currentLayoutPath)}">${escapeHtml(currentFileLabel())}</span>`
+    : ` · ${escapeHtml(currentFileLabel())}`;
   const dirtyInfo = state.dirty ? ' · ● modificato' : '';
   const hiddenCount = state.layers.filter(l => !layerVisible(l)).length;
   const hiddenInfo = hiddenCount ? ` · ${hiddenCount} nascosti` : '';
   const info = $('canvasInfo');
   if(info) info.innerHTML = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount}${hiddenInfo} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}${dirtyInfo ? `<span class="dirtyMark">${dirtyInfo}</span>` : ''}`;
+}
+
+/** Fit the artboard in the visible stage area, and keep the zoom UI honest. */
+function zoomToFit(){
+  const scroller = document.querySelector('.stageScroller');
+  if(!scroller || !state.canvas.width || !state.canvas.height) return;
+  // The scroller has 72px padding on each side; leave a small breathing margin too.
+  const availW = scroller.clientWidth - 96;
+  const availH = scroller.clientHeight - 96;
+  if(availW < 50 || availH < 50) return;
+  const fit = Math.min(availW / state.canvas.width, availH / state.canvas.height) * 100;
+  const range = $('zoomRange');
+  const min = range ? Number(range.min) : 15;
+  const max = range ? Number(range.max) : 400;
+  // Never zoom a small artboard past 100: fit means "see it whole", not "blow it up".
+  state.zoom = Math.max(min, Math.min(max, Math.min(fit, 100)));
+  if(range) range.value = state.zoom;
+  const label = $('zoomLabel');
+  if(label) label.textContent = Math.round(state.zoom) + '%';
 }
 
 /** @param {{ skipProps?: boolean }} [opts] skipProps: keep props/select focus (font arrow browse) */
@@ -1127,6 +1150,7 @@ function loadLayoutObject(data, path=null, localName=null){
   }
   clearDirty();
   syncCanvasInputs();
+  zoomToFit();
   render();
   onLayoutChangedForVariants?.();
   Promise.resolve(loadHostFonts?.())
@@ -1781,6 +1805,17 @@ function init(){
   $('bulkExportBtn').onclick=exportSelectedLayouts;
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
+  // Delegated: updateCanvasInfo rebuilds the span on every render, so the handler
+  // must live on the stable parent.
+  $('canvasInfo')?.addEventListener('click', async (ev)=>{
+    if(!ev.target?.closest?.('.fileRefCopy') || !state.currentLayoutPath) return;
+    try{
+      await copyTextToClipboard(state.currentLayoutPath);
+      showToast('Percorso copiato: ' + state.currentLayoutPath);
+    }catch(e){
+      showToast('Copia fallita: ' + (e.message || e));
+    }
+  });
   $('librarySelectAllCheckbox').onchange=(ev)=>toggleVisibleLibrarySelection(ev.target.checked);
   $('librarySearch').oninput=renderLibraryGrid;
   $('libraryKindFilter').onchange=() => (typeof onLibraryKindFilterChange === 'function' ? onLibraryKindFilterChange() : renderLibraryGrid());
