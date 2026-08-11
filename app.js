@@ -781,7 +781,10 @@ function onMarqueeMove(ev){
 function endMarquee(){
   if(!marquee) return;
   const m={x:parseFloat(marquee.el.style.left)||0,y:parseFloat(marquee.el.style.top)||0,w:parseFloat(marquee.el.style.width)||0,h:parseFloat(marquee.el.style.height)||0};
-  const hits=state.layers.filter(l=> layerVisible(l) && intersects(m,l)).map(l=>l.id);
+  // Locked layers are not grabbable on the canvas, so a rubber band must not pick
+  // them up either: dragging across one would otherwise pull it into a selection
+  // that cannot be moved.
+  const hits=state.layers.filter(l=> layerVisible(l) && !layerLocked(l) && intersects(m,l)).map(l=>l.id);
   if(!marquee.additive) state.selectedIds=[];
   hits.forEach(id=>{ if(!state.selectedIds.includes(id)) state.selectedIds.push(id); });
   state.selectedId=state.selectedIds.at(-1)||null;
