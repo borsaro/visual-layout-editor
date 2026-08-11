@@ -184,6 +184,20 @@ function librarySelectPath(item){
   return item.path || item.rel || '';
 }
 function isLibrarySelected(path){ return state.selectedLibraryPaths.includes(path); }
+/** Flip one item and keep row, checkbox and bulk buttons in step, without a full re-render. */
+function toggleLibrarySelection(path){
+  if(!path) return;
+  const next = !isLibrarySelected(path);
+  setLibrarySelected(path, next);
+  const grid = $('layoutGrid');
+  grid?.querySelectorAll(`[data-path]`).forEach(el => {
+    if(el.dataset.path !== path) return;
+    el.classList.toggle('selectedForExport', next);
+    const cb = el.querySelector('input[type="checkbox"]');
+    if(cb) cb.checked = next;
+  });
+  // setLibrarySelected already refreshed the bulk buttons and the select-all state.
+}
 function setLibrarySelected(path, selected){
   if(!path) return;
   if(selected){
@@ -337,6 +351,16 @@ function bindLibraryKeyboard(){
     if(ev.key === 'ArrowUp'){
       ev.preventDefault();
       moveLibraryFocus(-1);
+      return;
+    }
+    // Space ticks the highlighted row, so a set can be picked without leaving the keyboard.
+    if(ev.key === ' ' || ev.key === 'Spacebar'){
+      if(state.libraryViewMode !== 'list') return;
+      const item = findLibraryItemByKey(state.libraryFocusKey);
+      const path = item && librarySelectPath(item);
+      if(!path) return;
+      ev.preventDefault();   // otherwise the modal scrolls a page down
+      toggleLibrarySelection(path);
       return;
     }
     if(ev.key === 'Enter'){
@@ -633,7 +657,21 @@ function buildLibraryRow(item){
     else openLibraryItem(item).then(() => closeLayoutLibrary()).catch(e => alert('Errore apertura: ' + e.message));
   });
 
-  row.append(check, title, openBtn);
+  // Only real layouts have a preview sidecar to redraw.
+  if(item.kind === 'layout' || (item.kind === 'image' && item.has_layout)){
+    const reloadBtn = document.createElement('button');
+    reloadBtn.className = 'libraryRowReload';
+    reloadBtn.textContent = '↻';
+    reloadBtn.title = 'Rigenera anteprima dal design aggiornato';
+    reloadBtn.setAttribute('aria-label', 'Rigenera anteprima');
+    reloadBtn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      regenerateLayoutPreview(item, reloadBtn);
+    });
+    row.append(check, title, reloadBtn, openBtn);
+  } else {
+    row.append(check, title, openBtn);
+  }
   row.onclick = (ev) => {
     if(isLibraryMultiSelectModifier(ev)) return;
     focusLibraryItem(key, { scroll: false });
@@ -850,21 +888,74 @@ async function persistLayoutPreview(path, canvas){
   });
 }
 
+/** Scaled-down render of any layout, at the size the library thumbnails use. */
+async function renderLayoutPreviewCanvas(layout){
+  const c = document.createElement('canvas');
+  const w = layout.canvas?.width || 1080;
+  const h = layout.canvas?.height || 1350;
+  const scale = Math.min(420 / w, 520 / h);
+  c.width = Math.round(w * scale);
+  c.height = Math.round(h * scale);
+  const ctx = c.getContext('2d');
+  ctx.scale(scale, scale);
+  await renderLayoutToCanvas(ctx, layout, w, h);
+  return c;
+}
+
 async function uploadCurrentLayoutPreview(){
   if(!state.currentLayoutPath) return;
   try{
-    const layout = layoutPayload();
-    const c = document.createElement('canvas');
-    const w = layout.canvas?.width || 1080;
-    const h = layout.canvas?.height || 1350;
-    const scale = Math.min(420 / w, 520 / h);
-    c.width = Math.round(w * scale);
-    c.height = Math.round(h * scale);
-    const ctx = c.getContext('2d');
-    ctx.scale(scale, scale);
-    await renderLayoutToCanvas(ctx, layout, w, h);
+    const c = await renderLayoutPreviewCanvas(layoutPayload());
     await persistLayoutPreview(state.currentLayoutPath, c);
   } catch(e){ /* non-blocking */ }
+}
+
+/**
+ * Redraw a layout's thumbnail from the JSON on disk, without opening it.
+ * The fonts it uses may not be loaded in this page yet, and a preview rendered with
+ * a fallback face would look wrong in a way that is easy to mistake for a real change.
+ */
+async function regenerateLayoutPreview(item, btn){
+  const path = item?.path || item?.rel;
+  if(!path) return;
+  const previous = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.classList.add('isBusy'); }
+  try{
+    const res = await fetch('/api/load-layout?path=' + encodeURIComponent(path), { cache: 'no-store' });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'load failed');
+    const layout = data.layout;
+    await loadHostFonts?.();
+    await ensureLayoutCustomFonts?.(layout.layers || []);
+    const families = collectLayoutFontFamilies?.(layout.layers || []) || [];
+    await Promise.all([...families].map(f => waitForFont?.(f, 4000)));
+    try { await document.fonts.ready; } catch(_){}
+
+    const canvas = await renderLayoutPreviewCanvas(layout);
+    await persistLayoutPreview(path, canvas);
+    // Sidecars are served with a long cache, so the new bytes need a fresh URL.
+    item.mtime = Math.floor(Date.now() / 1000);
+    refreshLibraryRowPreview(item);
+    showToast('Anteprima rigenerata: ' + (item.name || path));
+  }catch(e){
+    showToast('Rigenerazione anteprima fallita: ' + (e.message || e));
+  }finally{
+    if(btn){ btn.disabled = false; btn.classList.remove('isBusy'); if(previous !== null) btn.textContent = previous; }
+  }
+}
+
+/**
+ * Show the freshly written bytes wherever this layout is on screen.
+ * Grid cards hold an <img> pointed at the sidecar, which is cached and needs a new
+ * URL; the side panel is rebuilt instead, because it may be a client-rendered
+ * <canvas> rather than an image.
+ */
+function refreshLibraryRowPreview(item){
+  const key = libraryItemKey(item);
+  const base = item.preview_src || ('/api/layout-preview?path=' + encodeURIComponent(item.path));
+  const bust = base + (base.includes('?') ? '&' : '?') + 'v=' + Date.now();
+  document.querySelectorAll(`[data-lib-key="${CSS.escape(key)}"] img`).forEach(img => { img.src = bust; });
+  if(state.libraryFocusKey === key) updateLibrarySidePreview(item);
 }
 
 async function loadReadyLayouts(){ /* library loads only when modal opens */ }
