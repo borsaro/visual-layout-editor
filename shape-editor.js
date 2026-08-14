@@ -43,7 +43,7 @@ function startVertexEdit(id) {
   const layer = state.layers.find((l) => l.id === id);
   if (!layer || layerLocked(layer)) return;
   if (layer.type === 'shape') {
-    if (shapeIsEllipse(layer)) return;
+    if (shapeIsEllipse(layer) || shapeIsArrow(layer)) return;
   } else if (imageHasMask(layer)) {
     if (imageMaskIsEllipse(layer)) return;
   } else {

@@ -125,7 +125,7 @@ Vector shape from a preset, optionally warped vertex by vertex
 
 | Campo | Tipo | Descrizione |
 | --- | --- | --- |
-| `shapeKind` | string | Shape layer preset. Changing it discards hand-warped points _(uno di: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexagon`, `octagon`, `star`, `polygon`; default `"rect"`)_ |
+| `shapeKind` | string | Shape layer preset. Changing it discards hand-warped points _(uno di: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexagon`, `octagon`, `star`, `polygon`, `arrow`; default `"rect"`)_ |
 | `sides` | integer | Vertex count for shapeKind=polygon, point count for shapeKind=star (3-32) _(default `6`)_ |
 | `corner` | number | Shape corner rounding in px, clamped per edge _(default `0`)_ |
 | `fill` | string | Fill color for rect and shape, hex |
@@ -133,8 +133,13 @@ Vector shape from a preset, optionally warped vertex by vertex
 | `stroke` | string | Border color for rect and shape, hex |
 | `strokeWidth` | number | Border thickness in px, 0 hides the border _(default `0`)_ |
 | `points` | array | Shape only: [[x,y], …] normalized 0..1 vertices relative to w/h, min 3. Set it to warp the shape into an irregular polygon; null restores the preset. Values outside 0..1 push a vertex past the layer box (clamped to -1..2). |
+| `arrowHead` | string | Arrow shapes only: head style at the tip. The arrow points right inside its box; rotate the layer to aim it. stroke is the colour, strokeWidth the line weight, w the line length. _(uno di: `triangle`, `stealth`, `open`, `circle`, `none`; default `"triangle"`)_ |
+| `arrowHeadSize` | number | Arrow shapes: head length in px _(default `26`)_ |
+| `arrowDash` | number | Arrow shapes: dash length in px, 0 = solid line _(default `0`)_ |
+| `arrowDouble` | boolean | Arrow shapes: heads on both ends _(default `false`)_ |
+| `arrowTail` | string | Arrow shapes: plain start or a dot; ignored when arrowDouble is true _(uno di: `none`, `circle`; default `"none"`)_ |
 
-Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexagon`, `octagon`, `star`, `polygon`.
+Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexagon`, `octagon`, `star`, `polygon`, `arrow`.
 
 ## Ricette per agenti
 

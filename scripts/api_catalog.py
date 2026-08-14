@@ -56,8 +56,12 @@ ENDPOINTS = [
 
 SHAPE_KINDS = [
     'rect', 'ellipse', 'triangle', 'diamond',
-    'pentagon', 'hexagon', 'octagon', 'star', 'polygon',
+    'pentagon', 'hexagon', 'octagon', 'star', 'polygon', 'arrow',
 ]
+
+# Kinds usable as an image mask: everything except the arrow, which is a stroked
+# line with no interior to clip through.
+MASK_KINDS = [k for k in SHAPE_KINDS if k != 'arrow']
 
 LAYER_TYPES = {
     'text': {
@@ -82,7 +86,8 @@ LAYER_TYPES = {
     },
     'shape': {
         'desc': 'Vector shape from a preset, optionally warped vertex by vertex',
-        'fields': ['shapeKind', 'sides', 'corner', 'fill', 'fillEnabled', 'stroke', 'strokeWidth', 'points'],
+        'fields': ['shapeKind', 'sides', 'corner', 'fill', 'fillEnabled', 'stroke', 'strokeWidth', 'points',
+                   'arrowHead', 'arrowHeadSize', 'arrowDash', 'arrowDouble', 'arrowTail'],
     },
 }
 
@@ -154,7 +159,7 @@ LAYER_FIELDS_FOR_AGENTS = {
     'crop': {'type': 'object', 'desc': 'Image only: {x,y,w,h} normalized 0..1 source crop'},
     'maskKind': {
         'type': 'string',
-        'enum': ['none'] + SHAPE_KINDS,
+        'enum': ['none'] + MASK_KINDS,
         'desc': 'Image only: clip the image through a shape. Same presets as shape '
                 'layers; none (or null) removes the mask. The rectangular crop field '
                 'is unrelated: crop picks the source region, the mask cuts the outline.',
@@ -191,6 +196,25 @@ LAYER_FIELDS_FOR_AGENTS = {
         'example_patch': {'id': 'layer_title', 'skewX': -12},
     },
     'skewY': {'type': 'number', 'default': 0, 'desc': 'Vertical slant in degrees, applied after rotation'},
+    'arrowHead': {
+        'type': 'string',
+        'enum': ['triangle', 'stealth', 'open', 'circle', 'none'],
+        'default': 'triangle',
+        'desc': 'Arrow shapes only: head style at the tip. The arrow points right '
+                'inside its box; rotate the layer to aim it. stroke is the colour, '
+                'strokeWidth the line weight, w the line length.',
+        'example_patch': {'id': 'layer_arrow', 'shapeKind': 'arrow', 'arrowHead': 'stealth',
+                          'arrowHeadSize': 32, 'stroke': '#ffffff', 'strokeWidth': 8},
+    },
+    'arrowHeadSize': {'type': 'number', 'default': 26, 'desc': 'Arrow shapes: head length in px'},
+    'arrowDash': {'type': 'number', 'default': 0, 'desc': 'Arrow shapes: dash length in px, 0 = solid line'},
+    'arrowDouble': {'type': 'boolean', 'default': False, 'desc': 'Arrow shapes: heads on both ends'},
+    'arrowTail': {
+        'type': 'string',
+        'enum': ['none', 'circle'],
+        'default': 'none',
+        'desc': 'Arrow shapes: plain start or a dot; ignored when arrowDouble is true',
+    },
     'warp': {
         'type': 'array',
         'desc': 'Free corner distort: [[x,y] x 4] for top-left, top-right, bottom-right, '

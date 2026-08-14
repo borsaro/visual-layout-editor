@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260813-2" />
-  <link rel="stylesheet" href="./left-panel.css?v=20260813-2" />
-  <link rel="stylesheet" href="./inspector.css?v=20260813-2" />
-  <link rel="stylesheet" href="./shapes.css?v=20260813-2" />
-  <link rel="stylesheet" href="./warp.css?v=20260813-2" />
-  <link rel="stylesheet" href="./variants.css?v=20260813-2" />
+  <link rel="stylesheet" href="./styles.css?v=20260813-3" />
+  <link rel="stylesheet" href="./left-panel.css?v=20260813-3" />
+  <link rel="stylesheet" href="./inspector.css?v=20260813-3" />
+  <link rel="stylesheet" href="./shapes.css?v=20260813-3" />
+  <link rel="stylesheet" href="./warp.css?v=20260813-3" />
+  <link rel="stylesheet" href="./variants.css?v=20260813-3" />
 </head>
 <body>
   <header class="topbar">
@@ -80,6 +80,7 @@
               <option value="octagon">Ottagono</option>
               <option value="star">Stella</option>
               <option value="polygon">Poligono N lati</option>
+              <option value="arrow">Freccia</option>
             </select>
           </label>
           <button id="addShapeBtn" class="wide">+ Forma vettoriale</button>
@@ -278,6 +279,7 @@
               <option value="octagon">Ottagono</option>
               <option value="star">Stella</option>
               <option value="polygon">Poligono N lati</option>
+              <option value="arrow">Freccia</option>
             </select>
           </label>
           <label id="shapeSidesField" hidden>Lati / punte <input id="propShapeSides" type="number" min="3" max="32" step="1" value="6"></label>
@@ -288,6 +290,30 @@
             <label>Bordo <input id="propShapeStroke" type="color" value="#111111"></label>
           </div>
           <label>Spessore bordo <input id="propShapeStrokeWidth" type="number" min="0" step="1" value="0"></label>
+          <div id="arrowProps" hidden>
+            <label>Tipo di punta
+              <select id="propArrowHead">
+                <option value="triangle">Piena</option>
+                <option value="stealth">Affusolata</option>
+                <option value="open">Aperta a V</option>
+                <option value="circle">Pallino</option>
+                <option value="none">Nessuna</option>
+              </select>
+            </label>
+            <div class="grid2">
+              <label>Dimensione punta <input id="propArrowHeadSize" type="number" min="4" max="200" step="1" value="26"></label>
+              <label>Lunghezza linea <input id="propArrowLength" type="number" min="20" step="1"></label>
+            </div>
+            <label>Tratteggio <input id="propArrowDash" type="number" min="0" step="1" value="0"></label>
+            <label class="toggleRow"><input id="propArrowDouble" type="checkbox"> Doppia punta</label>
+            <label id="arrowTailField">Coda
+              <select id="propArrowTail">
+                <option value="none">Semplice</option>
+                <option value="circle">Pallino</option>
+              </select>
+            </label>
+            <p class="muted hint">La freccia punta a destra: ruota il layer per orientarla. Tratteggio 0 = linea piena.</p>
+          </div>
           <div class="shapeVertexActions">
             <button type="button" id="shapeEditVerticesBtn">Modifica vertici</button>
             <button type="button" id="shapeResetPointsBtn">Reset vertici</button>
@@ -473,28 +499,28 @@
     </div>
   </div>
 
-  <script src="./fonts.js?v=20260813-2"></script>
-  <script src="./format-presets.js?v=20260813-2"></script>
-  <script src="./blend.js?v=20260813-2"></script>
-  <script src="./effects.js?v=20260813-2"></script>
-  <script src="./asset-src.js?v=20260813-2"></script>
-  <script src="./gradient.js?v=20260813-2"></script>
-  <script src="./svg-tint.js?v=20260813-2"></script>
-  <script src="./bg-remove-panel.js?v=20260813-2"></script>
-  <script src="./warp.js?v=20260813-2"></script>
-  <script src="./warp-editor.js?v=20260813-2"></script>
-  <script src="./shapes.js?v=20260813-2"></script>
-  <script src="./shape-editor.js?v=20260813-2"></script>
-  <script src="./shape-props.js?v=20260813-2"></script>
-  <script src="./image-process.js?v=20260813-2"></script>
-  <script src="./image-adjust.js?v=20260813-2"></script>
-  <script src="./text-style.js?v=20260813-2"></script>
-  <script src="./text-layout.js?v=20260813-2"></script>
-  <script src="./left-panel.js?v=20260813-2"></script>
-  <script src="./live-client.js?v=20260813-2"></script>
-  <script src="./inspector-controls.js?v=20260813-2"></script>
-  <script src="./app.js?v=20260813-2"></script>
-  <script src="./variants-panel.js?v=20260813-2"></script>
-  <script src="./library.js?v=20260813-2"></script>
+  <script src="./fonts.js?v=20260813-3"></script>
+  <script src="./format-presets.js?v=20260813-3"></script>
+  <script src="./blend.js?v=20260813-3"></script>
+  <script src="./effects.js?v=20260813-3"></script>
+  <script src="./asset-src.js?v=20260813-3"></script>
+  <script src="./gradient.js?v=20260813-3"></script>
+  <script src="./svg-tint.js?v=20260813-3"></script>
+  <script src="./bg-remove-panel.js?v=20260813-3"></script>
+  <script src="./warp.js?v=20260813-3"></script>
+  <script src="./warp-editor.js?v=20260813-3"></script>
+  <script src="./shapes.js?v=20260813-3"></script>
+  <script src="./shape-editor.js?v=20260813-3"></script>
+  <script src="./shape-props.js?v=20260813-3"></script>
+  <script src="./image-process.js?v=20260813-3"></script>
+  <script src="./image-adjust.js?v=20260813-3"></script>
+  <script src="./text-style.js?v=20260813-3"></script>
+  <script src="./text-layout.js?v=20260813-3"></script>
+  <script src="./left-panel.js?v=20260813-3"></script>
+  <script src="./live-client.js?v=20260813-3"></script>
+  <script src="./inspector-controls.js?v=20260813-3"></script>
+  <script src="./app.js?v=20260813-3"></script>
+  <script src="./variants-panel.js?v=20260813-3"></script>
+  <script src="./library.js?v=20260813-3"></script>
 </body>
 </html>

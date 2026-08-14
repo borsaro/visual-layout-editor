@@ -13,6 +13,28 @@ function syncShapeProps(layer) {
   setVal('propShapeKind', kind);
   setVal('propShapeSides', Number(layer.sides) || 6);
   setVal('propShapeCorner', Number(layer.corner) || 0);
+
+  // Arrows are stroked lines: fill, corners and vertex warping do not apply, and
+  // showing their controls would only promise things the renderer ignores.
+  const isArrow = kind === 'arrow';
+  const arrowBox = $('arrowProps');
+  if (arrowBox) arrowBox.hidden = !isArrow;
+  $('propShapeFillEnabled')?.closest('label')?.toggleAttribute('hidden', isArrow);
+  $('propShapeFill')?.closest('label')?.toggleAttribute('hidden', isArrow);
+  $('propShapeCorner')?.closest('label')?.toggleAttribute('hidden', isArrow);
+  document.querySelector('.shapeVertexActions')?.toggleAttribute('hidden', isArrow);
+  $('shapeVertexHint')?.toggleAttribute('hidden', isArrow);
+  if (isArrow) {
+    setVal('propArrowHead', layer.arrowHead || 'triangle');
+    setVal('propArrowHeadSize', Number(layer.arrowHeadSize) || 26);
+    setVal('propArrowLength', Math.round(Number(layer.w) || 0));
+    setVal('propArrowDash', Number(layer.arrowDash) || 0);
+    const dbl = $('propArrowDouble');
+    if (dbl) dbl.checked = !!layer.arrowDouble;
+    setVal('propArrowTail', layer.arrowTail || 'none');
+    // With heads on both ends there is no tail to style.
+    $('arrowTailField')?.toggleAttribute('hidden', !!layer.arrowDouble);
+  }
   setVal('propShapeFill', typeof rgbToHex === 'function' ? rgbToHex(layer.fill || '#eb0029') : (layer.fill || '#eb0029'));
   setVal('propShapeStroke', typeof rgbToHex === 'function' ? rgbToHex(layer.stroke || '#111111') : (layer.stroke || '#111111'));
   setVal('propShapeStrokeWidth', Number(layer.strokeWidth) || 0);
@@ -26,7 +48,7 @@ function syncShapeProps(layer) {
   const editBtn = $('shapeEditVerticesBtn');
   if (editBtn) {
     const editing = state.vertexEditId === layer.id;
-    editBtn.disabled = kind === 'ellipse' && !shapeHasCustomPoints(layer);
+    editBtn.disabled = (kind === 'ellipse' && !shapeHasCustomPoints(layer)) || kind === 'arrow';
     editBtn.classList.toggle('active', editing);
     editBtn.textContent = editing ? 'Chiudi vertici' : 'Modifica vertici';
   }
@@ -80,6 +102,18 @@ function bindShapeProps() {
     }
   });
   $('propShapeFill')?.addEventListener('input', () => updateProp('fill', $('propShapeFill').value));
+  $('propArrowHead')?.addEventListener('change', () => updateProp('arrowHead', $('propArrowHead').value));
+  $('propArrowHeadSize')?.addEventListener('input', () => {
+    updateProp('arrowHeadSize', Math.max(4, Number($('propArrowHeadSize').value) || 26), { history: false, debounce: true });
+  });
+  $('propArrowLength')?.addEventListener('input', () => {
+    updateProp('w', Math.max(20, Number($('propArrowLength').value) || 20), { history: false, debounce: true });
+  });
+  $('propArrowDash')?.addEventListener('input', () => {
+    updateProp('arrowDash', Math.max(0, Number($('propArrowDash').value) || 0), { history: false, debounce: true });
+  });
+  $('propArrowDouble')?.addEventListener('change', () => updateProp('arrowDouble', !!$('propArrowDouble').checked));
+  $('propArrowTail')?.addEventListener('change', () => updateProp('arrowTail', $('propArrowTail').value));
   $('propShapeStroke')?.addEventListener('input', () => updateProp('stroke', $('propShapeStroke').value));
   $('propShapeStrokeWidth')?.addEventListener('input', () => {
     updateProp('strokeWidth', Math.max(0, Number($('propShapeStrokeWidth').value) || 0), { history: false, debounce: true });

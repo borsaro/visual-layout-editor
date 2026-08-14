@@ -517,6 +517,8 @@ const PROP_RULES = {
   shadow:{types:['text','image','rect','gradient','shape']},
   shapeKind:{types:['shape']}, sides:{types:['shape']}, corner:{types:['shape']},
   fillEnabled:{types:['shape']}, points:{scope:'single',types:['shape']},
+  arrowHead:{types:['shape']}, arrowHeadSize:{types:['shape']}, arrowDash:{types:['shape']},
+  arrowDouble:{types:['shape']}, arrowTail:{types:['shape']},
   fontSize:{types:['text']}, fontWeight:{types:['text']}, fontFamily:{types:['text']},
   fontStyle:{types:['text']}, underline:{types:['text']}, strikethrough:{types:['text']},
   textTransform:{types:['text']}, letterSpacing:{types:['text']}, color:{types:['text']},
@@ -1786,6 +1788,35 @@ function bindKeyboardShortcuts(){
     if(mod && key === 's'){
       ev.preventDefault();
       saveJsonOverwrite();
+      return;
+    }
+    if(mod && key === 'c' && state.selectedIds.length){
+      // Never steal a real text copy: if the user highlighted text, that wins.
+      if(String(window.getSelection?.() || '').length) return;
+      ev.preventDefault();
+      state.layerClipboard = selectedLayers().map(l => JSON.parse(JSON.stringify(l)));
+      showToast(state.layerClipboard.length === 1
+        ? `Copiato: ${state.layerClipboard[0].name || state.layerClipboard[0].id}`
+        : `Copiati ${state.layerClipboard.length} layer`);
+      return;
+    }
+    if(mod && key === 'v' && state.layerClipboard?.length){
+      ev.preventDefault();
+      pushHistory();
+      const pasted = state.layerClipboard.map(src => {
+        const copy = JSON.parse(JSON.stringify(src));
+        copy.id = uid();
+        copy.x = (Number(copy.x) || 0) + 20;
+        copy.y = (Number(copy.y) || 0) + 20;
+        copy.z = nextZ();
+        delete copy.locked;   // a pasted copy should be editable even if the source was locked
+        state.layers.push(copy);
+        return copy.id;
+      });
+      state.selectedIds = pasted;
+      state.selectedId = pasted.at(-1) || null;
+      markDirty();
+      render();
       return;
     }
     if(mod && key === 'd'){
