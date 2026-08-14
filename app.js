@@ -18,6 +18,7 @@ const state = {
   showSafeGuides: localStorage.getItem('robyShowSafeGuides') === '1',
   vertexEditId: null, // shape layer currently in per-vertex warp mode
   warpMode: localStorage.getItem('robyWarpMode') === '1', // corner-distort editing on the canvas
+  cropMode: localStorage.getItem('robyCropMode') === '1', // handles crop instead of resizing
   warpModeTemp: false, // Option/Alt held: distort until the key is released
   campaignsRoot: '',
   editorRoot: '',
@@ -712,7 +713,7 @@ function startDrag(ev, id, handle=null){
     return;
   }
   const resizing = !!handle;
-  const cropMode = resizing && (ev.ctrlKey || ev.metaKey);
+  const cropMode = resizing && (ev.ctrlKey || ev.metaKey || (state.cropMode && target?.type === 'image'));
   const freeResizeMode = resizing && ev.shiftKey;
   // On corner handles, modifier keys control resize/crop behavior, not selection.
   // If the handle target is not already selected, resize only that layer.
@@ -723,7 +724,7 @@ function startDrag(ev, id, handle=null){
   const layers=selectedLayers().filter(l => !layerLocked(l));
   if(!layers.length){ render(); return; }
   pushHistory();
-  drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type})), box: groupBox(layers) };
+  drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
   document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', endDrag); render();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
@@ -733,11 +734,20 @@ function normalizedCrop(l){
   const w=clamp(Number(c.w)||1,.02,1-x), h=clamp(Number(c.h)||1,.02,1-y);
   return {x,y,w,h};
 }
-function applyImageCropFromHandle(layer, original, handle, dx, dy){
+function applyImageCropFromHandle(layer, original, handle, dx, dy, keepAspect=false){
   const min=.04;
   const c=original.crop || {x:0,y:0,w:1,h:1};
   const right=c.x+c.w, bottom=c.y+c.h;
-  const ddx=dx/Math.max(1, original.w), ddy=dy/Math.max(1, original.h);
+  let ddx=dx/Math.max(1, original.w), ddy=dy/Math.max(1, original.h);
+  if(keepAspect){
+    // The dominant axis leads, the other follows at the crop's own ratio, signed so
+    // that every corner handle grows or shrinks both axes together.
+    const ratio = c.w / Math.max(1e-6, c.h);
+    const sx = handle.includes('w') ? -1 : 1;
+    const sy = handle.includes('n') ? -1 : 1;
+    if(Math.abs(ddx) >= Math.abs(ddy)) ddy = (sx * ddx) / ratio * sy;
+    else ddx = (sy * ddy) * ratio * sx;
+  }
   let x=c.x, y=c.y, w=c.w, h=c.h;
   if(handle.includes('w')){ x=clamp(c.x+ddx,0,right-min); w=right-x; }
   if(handle.includes('e')){ w=clamp(c.w+ddx,min,1-c.x); }
@@ -745,6 +755,31 @@ function applyImageCropFromHandle(layer, original, handle, dx, dy){
   if(handle.includes('s')){ h=clamp(c.h+ddy,min,1-c.y); }
   layer.crop={x,y,w,h};
 }
+/**
+ * Alt-drag on a corner handle in crop mode: move one mask vertex independently.
+ * The vertex is picked once, from the ORIGINAL points, as the one nearest the
+ * dragged corner — so a mask that is already warped keeps a stable target for the
+ * whole drag instead of hopping between vertices mid-move.
+ */
+function applyMaskVertexFromHandle(layer, original, handle, dx, dy){
+  const base = original.maskPoints
+    || shapePoints(imageMaskProxy({ maskKind: original.maskKind || 'rect', maskPoints: null,
+                                    maskSides: original.maskSides, w: original.w, h: original.h }));
+  const target = [handle.includes('e') ? 1 : 0, handle.includes('s') ? 1 : 0];
+  let idx = 0, best = Infinity;
+  base.forEach((p, i) => {
+    const d = (p[0]-target[0])**2 + (p[1]-target[1])**2;
+    if(d < best){ best = d; idx = i; }
+  });
+  const pts = base.map(p => [p[0], p[1]]);
+  pts[idx] = [
+    clamp(base[idx][0] + dx/Math.max(1, original.w), -1, 2),
+    clamp(base[idx][1] + dy/Math.max(1, original.h), -1, 2),
+  ];
+  if(!layer.maskKind || layer.maskKind === 'none') layer.maskKind = 'rect';
+  layer.maskPoints = pts;
+}
+
 function resizeBoxFromHandle(original, handle, dx, dy, keepAspect=false){
   let left=original.x, top=original.y, right=original.x+original.w, bottom=original.y+original.h;
   if(handle.includes('w')) left += dx;
@@ -772,11 +807,19 @@ function onMove(ev){
     const single = drag.originals.length === 1;
     const orig = drag.originals[0];
     const layer = single ? state.layers.find(x=>x.id===orig.id) : null;
-    const cropMode = single && layer?.type === 'image' && (drag.cropMode || ev.ctrlKey || ev.metaKey);
+    const toggleCrop = state.cropMode && single && layer?.type === 'image';
+    const maskVertexMode = toggleCrop && ev.altKey;
+    const cropMode = single && layer?.type === 'image' && !maskVertexMode
+      && (drag.cropMode || ev.ctrlKey || ev.metaKey || toggleCrop);
+    // In crop mode the natural drag keeps the crop's own ratio; Cmd frees it.
+    // Outside crop mode Cmd-crop stays free, exactly as before.
+    const cropKeepAspect = toggleCrop && !(ev.ctrlKey || ev.metaKey);
     const freeResizeMode = drag.freeResizeMode || ev.shiftKey;
     const keepAspect = single && layer?.type === 'image' && !freeResizeMode && !cropMode;
-    if(cropMode){
-      applyImageCropFromHandle(layer, orig, drag.handle, dx, dy);
+    if(maskVertexMode){
+      applyMaskVertexFromHandle(layer, orig, drag.handle, dx, dy);
+    } else if(cropMode){
+      applyImageCropFromHandle(layer, orig, drag.handle, dx, dy, cropKeepAspect);
     } else if(single){
       Object.assign(layer, resizeBoxFromHandle(orig, drag.handle, dx, dy, keepAspect));
     } else {
@@ -1849,6 +1892,18 @@ function init(){
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
   $('bulkRefreshThumbsBtn')?.addEventListener('click', ()=>refreshSelectedThumbs());
+  const syncCropModeUi = ()=>{
+    const b = $('cropModeBtn');
+    if(!b) return;
+    b.classList.toggle('active', !!state.cropMode);
+    b.setAttribute('aria-pressed', state.cropMode ? 'true' : 'false');
+  };
+  $('cropModeBtn')?.addEventListener('click', ()=>{
+    state.cropMode = !state.cropMode;
+    localStorage.setItem('robyCropMode', state.cropMode ? '1' : '0');
+    syncCropModeUi();
+  });
+  syncCropModeUi();
   // Delegated: updateCanvasInfo rebuilds the span on every render, so the handler
   // must live on the stable parent.
   $('canvasInfo')?.addEventListener('click', async (ev)=>{

@@ -163,6 +163,11 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 - **how**: Create a shape layer, then set points[] to normalized 0..1 vertices to drag each corner independently
 - **field**: points
 
+### crop_image
+
+- **how**: Set crop {x,y,w,h} normalized 0..1 on an image layer to choose the source region shown in the box; the box itself stays put. Keep w/h in the same ratio as the layer box to avoid distortion with fit stretch. For non-rectangular outlines use maskKind/maskPoints instead — crop picks the region, the mask cuts the outline.
+- **example_patch**: `{"id": "layer_photo", "crop": {"x": 0.1, "y": 0, "w": 0.8, "h": 0.8}}`
+
 ### mask_image
 
 - **how**: Set maskKind on an image layer to clip it through a shape (hexagon, star, ellipse…). maskCorner rounds the corners, maskPoints warps individual vertices (normalized 0..1), maskKind none removes it. Works via patch_live_layers and patch_layout_file like any other field

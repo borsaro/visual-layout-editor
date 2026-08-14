@@ -8,6 +8,8 @@ const INSPECTOR_SLIDERS = {
   propStrokeWidth: [0, 100, 1],
   propRadius: [0, 500, 1],
   propShapeCorner: [0, 300, 1],
+  propMaskCorner: [0, 300, 1],
+  propMaskSides: [3, 32, 1],
   propShapeStrokeWidth: [0, 100, 1],
   propSkewX: [-60, 60, 1],
   propSkewY: [-60, 60, 1],
