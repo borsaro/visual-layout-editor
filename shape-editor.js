@@ -3,7 +3,17 @@
 let vertexDrag = null;
 
 function vertexEditActive(layer) {
-  return !!layer && layer.type === 'shape' && state.vertexEditId === layer.id;
+  if (!layer || state.vertexEditId !== layer.id) return false;
+  return layer.type === 'shape' || imageHasMask(layer);
+}
+
+/** Shapes warp their outline; images warp their mask. Same editor, different field. */
+function vertexPointsField(layer) {
+  return layer.type === 'image' ? 'maskPoints' : 'points';
+}
+
+function vertexGeometryPoints(layer) {
+  return layer.type === 'image' ? shapePoints(imageMaskProxy(layer)) : shapePoints(layer);
 }
 
 /**
@@ -21,16 +31,24 @@ function layerTransformMatrix(layer) {
 
 /** Freeze the current preset into editable points so every vertex can move. */
 function ensureShapePoints(layer) {
-  if (!shapeHasCustomPoints(layer)) {
-    layer.points = shapePoints(layer).map((p) => [p[0], p[1]]);
+  const field = vertexPointsField(layer);
+  const has = layer.type === 'image' ? imageMaskHasCustomPoints(layer) : shapeHasCustomPoints(layer);
+  if (!has) {
+    layer[field] = vertexGeometryPoints(layer).map((p) => [p[0], p[1]]);
   }
-  return layer.points;
+  return layer[field];
 }
 
 function startVertexEdit(id) {
   const layer = state.layers.find((l) => l.id === id);
-  if (!layer || layer.type !== 'shape' || layerLocked(layer)) return;
-  if (shapeIsEllipse(layer)) return;
+  if (!layer || layerLocked(layer)) return;
+  if (layer.type === 'shape') {
+    if (shapeIsEllipse(layer)) return;
+  } else if (imageHasMask(layer)) {
+    if (imageMaskIsEllipse(layer)) return;
+  } else {
+    return;
+  }
   if (!isSelected(id)) selectOnly(id);
   state.vertexEditId = id;
   render();
@@ -44,9 +62,12 @@ function stopVertexEdit() {
 
 function resetShapePoints(id) {
   const layer = state.layers.find((l) => l.id === id);
-  if (!layer || !shapeHasCustomPoints(layer) || layerLocked(layer)) return;
+  if (!layer || layerLocked(layer)) return;
+  const field = vertexPointsField(layer);
+  const has = layer.type === 'image' ? imageMaskHasCustomPoints(layer) : shapeHasCustomPoints(layer);
+  if (!has) return;
   pushHistory();
-  layer.points = null;
+  layer[field] = null;
   markDirty();
   render();
 }
@@ -54,7 +75,7 @@ function resetShapePoints(id) {
 function appendVertexHandles(el, layer) {
   const w = Math.max(1, Number(layer.w) || 1);
   const h = Math.max(1, Number(layer.h) || 1);
-  shapePoints(layer).forEach((p, index) => {
+  vertexGeometryPoints(layer).forEach((p, index) => {
     const dot = document.createElement('div');
     dot.className = 'vertexHandle';
     dot.dataset.vertex = String(index);
@@ -96,7 +117,7 @@ function onVertexMove(ev) {
   );
   const w = Math.max(1, Number(layer.w) || 1);
   const h = Math.max(1, Number(layer.h) || 1);
-  layer.points[vertexDrag.index] = [
+  layer[vertexPointsField(layer)][vertexDrag.index] = [
     clamp(vertexDrag.origin[0] + local.x / w, -1, 2),
     clamp(vertexDrag.origin[1] + local.y / h, -1, 2),
   ];

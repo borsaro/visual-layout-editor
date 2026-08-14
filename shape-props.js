@@ -85,3 +85,79 @@ function bindShapeProps() {
     resetShapePoints(layer.id);
   });
 }
+
+/* ------------------------------------------------------------- image mask props */
+
+function syncImageMaskProps(layer) {
+  const kind = (layer && layer.maskKind) || 'none';
+  setVal('propMaskKind', kind);
+  setVal('propMaskSides', Number(layer?.maskSides) || 6);
+  setVal('propMaskCorner', Number(layer?.maskCorner) || 0);
+  const active = kind !== 'none';
+
+  const sides = $('maskSidesField');
+  if (sides) sides.hidden = !active || !shapeSupportsSides(kind);
+  const cornerField = $('maskCornerField');
+  if (cornerField) cornerField.hidden = !active;
+  const actions = $('maskVertexActions');
+  if (actions) actions.hidden = !active;
+  const hint = $('maskVertexHint');
+  if (hint) hint.hidden = !active;
+
+  if (!active) return;
+  const editBtn = $('maskEditVerticesBtn');
+  if (editBtn) {
+    const editing = state.vertexEditId === layer.id;
+    editBtn.disabled = imageMaskIsEllipse(layer);
+    editBtn.classList.toggle('active', editing);
+    editBtn.textContent = editing ? 'Chiudi vertici' : 'Modifica vertici';
+  }
+  const resetBtn = $('maskResetPointsBtn');
+  if (resetBtn) resetBtn.disabled = !imageMaskHasCustomPoints(layer);
+  if (hint) {
+    hint.textContent = imageMaskHasCustomPoints(layer)
+      ? 'Maschera deformata a mano. Doppio click sull\'immagine per i vertici, Esc per uscire.'
+      : 'Doppio click sull\'immagine per trascinare i singoli vertici della maschera.';
+  }
+}
+
+/** Preset changes drop hand-warped mask vertices, which would otherwise hide the change. */
+function updateImageMaskGeometry(patch) {
+  const targets = selectedLayers().filter((l) => l.type === 'image' && !layerLocked(l));
+  if (!targets.length) return;
+  pushHistory();
+  targets.forEach((l) => {
+    Object.assign(l, patch);
+    l.maskPoints = null;
+  });
+  if (state.vertexEditId && targets.some((l) => l.id === state.vertexEditId)) state.vertexEditId = null;
+  markDirty();
+  render();
+}
+
+function bindImageMaskProps() {
+  $('propMaskKind')?.addEventListener('change', () => {
+    const kind = $('propMaskKind').value;
+    updateImageMaskGeometry(kind === 'none'
+      ? { maskKind: null, maskCorner: 0 }
+      : { maskKind: kind });
+  });
+  $('propMaskSides')?.addEventListener('change', () => {
+    updateImageMaskGeometry({ maskSides: Math.max(3, Math.min(32, Number($('propMaskSides').value) || 6)) });
+  });
+  $('propMaskCorner')?.addEventListener('input', () => {
+    // Rounding does not invalidate hand-moved vertices: it composes with them.
+    updateProp('maskCorner', Math.max(0, Number($('propMaskCorner').value) || 0), { history: false, debounce: true });
+  });
+  $('maskEditVerticesBtn')?.addEventListener('click', () => {
+    const layer = selected();
+    if (!layer || !imageHasMask(layer)) return;
+    if (state.vertexEditId === layer.id) stopVertexEdit();
+    else startVertexEdit(layer.id);
+  });
+  $('maskResetPointsBtn')?.addEventListener('click', () => {
+    const layer = selected();
+    if (!layer || layer.type !== 'image') return;
+    resetShapePoints(layer.id);
+  });
+}

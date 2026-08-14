@@ -344,6 +344,28 @@
             <label>Morbidezza <input id="propKeySoftness" type="number" min="0" max="255" step="1" value="40"></label>
           </div>
           <p class="muted hint">Maniglie: Shift = resize libero · Ctrl/Cmd = crop immagine</p>
+          <h3 class="propSubhead">Ritaglio a forma</h3>
+          <label>Forma maschera
+            <select id="propMaskKind">
+              <option value="none">Nessuna</option>
+              <option value="rect">Rettangolo</option>
+              <option value="ellipse">Ellisse / Cerchio</option>
+              <option value="triangle">Triangolo</option>
+              <option value="diamond">Rombo</option>
+              <option value="pentagon">Pentagono</option>
+              <option value="hexagon">Esagono</option>
+              <option value="octagon">Ottagono</option>
+              <option value="star">Stella</option>
+              <option value="polygon">Poligono N lati</option>
+            </select>
+          </label>
+          <label id="maskSidesField" hidden>Lati / punte <input id="propMaskSides" type="number" min="3" max="32" step="1" value="6"></label>
+          <label id="maskCornerField" hidden>Arrotondamento angoli <input id="propMaskCorner" type="number" min="0" step="1" value="0"></label>
+          <div id="maskVertexActions" class="shapeVertexActions" hidden>
+            <button type="button" id="maskEditVerticesBtn">Modifica vertici</button>
+            <button type="button" id="maskResetPointsBtn">Reset vertici</button>
+          </div>
+          <p id="maskVertexHint" class="muted hint" hidden></p>
         </section>
         <section id="svgTintProps" class="inspectorSection" hidden>
           <div class="inspectorSectionTitle"><span>Colore SVG</span></div>

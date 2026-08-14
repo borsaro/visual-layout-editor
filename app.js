@@ -233,6 +233,26 @@ function renderCanvasOverflowMask(){
   return mask;
 }
 
+/** Mount image content, clipping it through the shape mask when one is set. */
+function appendImageContent(el, layer, content, masked){
+  if(!masked){ el.appendChild(content); return; }
+  const wrap = document.createElement('div');
+  wrap.className = 'imageMaskWrap';
+  Object.assign(wrap.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+  const clipped = document.createElement('div');
+  Object.assign(clipped.style, {
+    position: 'absolute',
+    inset: '0',
+    clipPath: `path("${imageMaskPathD(layer)}")`,
+  });
+  clipped.appendChild(content);
+  wrap.appendChild(clipped);
+  // Effects on the wrapper: the drop-shadow reads the clipped alpha, so the
+  // shadow follows the mask outline instead of being cut off by it.
+  applyLayerEffectsDom(wrap, layer);
+  el.appendChild(wrap);
+}
+
 function renderLayer(layer) {
   const el = document.createElement('div');
   el.className = `layer ${layer.type}` + (isSelected(layer.id) ? ' selected' : '') + (layerLocked(layer) ? ' locked' : '');
@@ -279,7 +299,11 @@ function renderLayer(layer) {
   } else if (layer.type === 'image') {
     const img = document.createElement('img'); img.alt = layer.name || '';
     const crop = layer.crop ? normalizedCrop(layer) : null;
-    applyLayerEffectsDom(img, layer);
+    // With a shape mask, effects (drop-shadow) must sit on a wrapper OUTSIDE the
+    // clip: clip-path applies after filter, so a shadow on the clipped element
+    // itself would be cut away with everything else beyond the path.
+    const masked = typeof imageHasMask === 'function' && imageHasMask(layer);
+    if(!masked) applyLayerEffectsDom(img, layer);
     if(typeof keyBlackEnabled === 'function' && keyBlackEnabled(layer)){
       const loader = new Image();
       loader.onload = ()=>{ img.src = processImageForKey(loader, layer).toDataURL('image/png'); };
@@ -309,7 +333,7 @@ function renderLayer(layer) {
         objectFit: 'fill',
       });
       clip.appendChild(img);
-      el.appendChild(clip);
+      appendImageContent(el, layer, clip, masked);
     } else {
       // Direct <img>: drop-shadow follows PNG alpha past the selection box
       Object.assign(img.style, {
@@ -319,8 +343,9 @@ function renderLayer(layer) {
         objectFit: layer.fit || 'contain',
         pointerEvents: 'none',
       });
-      el.appendChild(img);
+      appendImageContent(el, layer, img, masked);
     }
+    if(masked) el.addEventListener('dblclick', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); startVertexEdit(layer.id); });
   } else if (layer.type === 'gradient') {
     Object.assign(el.style, {
       background: gradientCssBackground(layer),
@@ -465,9 +490,11 @@ const PROP_RULES = {
   align:{types:['text']}, vAlign:{types:['text']}, lineHeight:{types:['text']}, glow:{types:['text']},
   fill:{types:['rect','shape']}, stroke:{types:['rect','shape']}, strokeWidth:{types:['rect','shape']}, radius:{types:['rect']},
   fit:{types:['image']}, adjust:{types:['image']}, keyBlack:{types:['image']},
+  maskKind:{types:['image']}, maskSides:{types:['image']}, maskCorner:{types:['image']},
+  maskPoints:{scope:'single',types:['image']},
   gradientType:{types:['gradient']}, angle:{types:['gradient']}, stops:{types:['gradient']},
 };
-const PROP_OBJECT_KEYS = new Set(['shadow','glow','adjust','keyBlack','stops','points']);
+const PROP_OBJECT_KEYS = new Set(['shadow','glow','adjust','keyBlack','stops','points','maskPoints']);
 
 function targetLayersForKey(key){
   const rule = PROP_RULES[key] || {};
@@ -559,6 +586,7 @@ function renderProps(){
       : 'Path relativo alla root campagne (es. _assets/fuoco/file.png).';
     syncKeyBlackProps(imageL);
     syncImageAdjustProps(imageL);
+    syncImageMaskProps?.(imageL);
   }
 
   const warpBox = $('warpProps');
@@ -954,6 +982,7 @@ function bindProps(){
   bindEffect('propShadow', 'shadow', true);
   bindEffect('propGlow', 'glow', false);
   bindShapeProps();
+  bindImageMaskProps?.();
   bindSvgTintProps();
   bindWarpProps();
   bindBgRemove?.();
@@ -1381,6 +1410,13 @@ function drawCanvasImage(ctx,l){
       octx.filter = adjFilter || 'none';
       drawImageFit(octx, srcImg, { ...l, x: 0, y: 0, w: off.width, h: off.height });
       octx.filter = 'none';
+      if(typeof imageHasMask === 'function' && imageHasMask(l)){
+        // Bake the mask into the offscreen alpha: the shadow drawn below then
+        // follows the mask outline for free, matching the DOM preview.
+        octx.globalCompositeOperation = 'destination-in';
+        octx.fill(new Path2D(imageMaskPathD({ ...l, w: off.width, h: off.height })));
+        octx.globalCompositeOperation = 'source-over';
+      }
       applyCanvasShadow(ctx, l.shadow);
       ctx.drawImage(off, l.x, l.y, l.w, l.h);
       clearCanvasShadow(ctx);

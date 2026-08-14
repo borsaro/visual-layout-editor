@@ -163,6 +163,11 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 - **how**: Create a shape layer, then set points[] to normalized 0..1 vertices to drag each corner independently
 - **field**: points
 
+### mask_image
+
+- **how**: Set maskKind on an image layer to clip it through a shape (hexagon, star, ellipse…). maskCorner rounds the corners, maskPoints warps individual vertices (normalized 0..1), maskKind none removes it. Works via patch_live_layers and patch_layout_file like any other field
+- **example_patch**: `{"id": "layer_photo", "maskKind": "hexagon", "maskCorner": 24}`
+
 ### edit_live
 
 - **how**: GET /api/live/state?path= to read that design on screen, POST /api/live/patch with the same path to change it. Always pass path when more than one editor may be open. Falls back to /api/patch-layers when nothing is open

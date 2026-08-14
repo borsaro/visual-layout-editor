@@ -152,6 +152,21 @@ LAYER_FIELDS_FOR_AGENTS = {
         'desc': 'How the bitmap fits its box',
     },
     'crop': {'type': 'object', 'desc': 'Image only: {x,y,w,h} normalized 0..1 source crop'},
+    'maskKind': {
+        'type': 'string',
+        'enum': ['none'] + SHAPE_KINDS,
+        'desc': 'Image only: clip the image through a shape. Same presets as shape '
+                'layers; none (or null) removes the mask. The rectangular crop field '
+                'is unrelated: crop picks the source region, the mask cuts the outline.',
+        'example_patch': {'id': 'layer_photo', 'maskKind': 'hexagon', 'maskCorner': 24},
+    },
+    'maskSides': {'type': 'integer', 'default': 6, 'desc': 'Image mask: sides/points for polygon and star kinds'},
+    'maskCorner': {'type': 'number', 'default': 0, 'desc': 'Image mask: corner rounding in px, composes with hand-moved vertices'},
+    'maskPoints': {
+        'type': 'array',
+        'desc': 'Image mask: [[x,y]…] normalized 0..1 vertices, like shape points. '
+                'Set to warp the mask outline; null returns to the preset shape.',
+    },
     'adjust': {
         'type': 'object',
         'desc': 'Image only: {brightness,contrast,saturate} in -100..100 plus {vivid} in 0..100',
@@ -280,6 +295,13 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
                 'how': 'Create a shape layer, then set points[] to normalized 0..1 vertices to drag '
                        'each corner independently',
                 'field': 'points',
+            },
+            'mask_image': {
+                'how': 'Set maskKind on an image layer to clip it through a shape (hexagon, star, '
+                       'ellipse…). maskCorner rounds the corners, maskPoints warps individual '
+                       'vertices (normalized 0..1), maskKind none removes it. Works via '
+                       'patch_live_layers and patch_layout_file like any other field',
+                'example_patch': {'id': 'layer_photo', 'maskKind': 'hexagon', 'maskCorner': 24},
             },
             'edit_live': {
                 'how': 'GET /api/live/state?path= to read that design on screen, '

@@ -167,3 +167,38 @@ function drawCanvasShape(ctx, layer) {
   ctx.restore();
   clearCanvasShadow(ctx);
 }
+
+/* ---------------------------------------------------------------- image masks */
+/**
+ * Shape-crop for image layers: the same geometry as shape layers (presets, hand
+ * warped vertices, rounded corners), applied as a clip instead of a fill. Fields
+ * live under mask* so they never collide with the rectangular source crop.
+ */
+function imageHasMask(layer) {
+  return !!layer && layer.type === 'image' && !!layer.maskKind && layer.maskKind !== 'none';
+}
+
+/** Adapter: lets every shape helper (shapePathD, shapePoints…) read mask fields. */
+function imageMaskProxy(layer) {
+  return {
+    shapeKind: layer.maskKind || 'rect',
+    points: layer.maskPoints,
+    sides: layer.maskSides,
+    corner: layer.maskCorner,
+    w: layer.w,
+    h: layer.h,
+  };
+}
+
+function imageMaskPathD(layer) {
+  return shapePathD(imageMaskProxy(layer));
+}
+
+function imageMaskHasCustomPoints(layer) {
+  return Array.isArray(layer?.maskPoints) && layer.maskPoints.length >= 3;
+}
+
+/** Vertex editing needs discrete points; a pure ellipse mask has none to drag. */
+function imageMaskIsEllipse(layer) {
+  return (layer.maskKind || 'rect') === 'ellipse' && !imageMaskHasCustomPoints(layer);
+}
