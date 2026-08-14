@@ -66,7 +66,18 @@ function bindShapeProps() {
     updateProp('corner', Math.max(0, Number($('propShapeCorner').value) || 0), { history: false, debounce: true });
   });
   $('propShapeFillEnabled')?.addEventListener('change', () => {
-    updateProp('fillEnabled', !!$('propShapeFillEnabled').checked);
+    const on = !!$('propShapeFillEnabled').checked;
+    updateProp('fillEnabled', on);
+    // No fill and no border is a shape that exists but cannot be seen — the toggle
+    // looks broken. Turning fill off with a 0-width border gives the border a body,
+    // so the outline (the reason to uncheck fill) appears at once.
+    if (!on) {
+      const targets = targetLayersForKey('strokeWidth').filter((l) => !layerLocked(l));
+      if (targets.length && targets.every((l) => !(Number(l.strokeWidth) > 0))) {
+        updateProp('strokeWidth', 4, { history: false });
+        setVal('propShapeStrokeWidth', 4);
+      }
+    }
   });
   $('propShapeFill')?.addEventListener('input', () => updateProp('fill', $('propShapeFill').value));
   $('propShapeStroke')?.addEventListener('input', () => updateProp('stroke', $('propShapeStroke').value));
