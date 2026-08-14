@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roby Visual Layout Editor</title>
-  <link rel="stylesheet" href="./styles.css?v=20260813-3" />
-  <link rel="stylesheet" href="./left-panel.css?v=20260813-3" />
-  <link rel="stylesheet" href="./inspector.css?v=20260813-3" />
-  <link rel="stylesheet" href="./shapes.css?v=20260813-3" />
-  <link rel="stylesheet" href="./warp.css?v=20260813-3" />
-  <link rel="stylesheet" href="./variants.css?v=20260813-3" />
+  <link rel="stylesheet" href="./styles.css?v=20260813-4" />
+  <link rel="stylesheet" href="./left-panel.css?v=20260813-4" />
+  <link rel="stylesheet" href="./inspector.css?v=20260813-4" />
+  <link rel="stylesheet" href="./shapes.css?v=20260813-4" />
+  <link rel="stylesheet" href="./warp.css?v=20260813-4" />
+  <link rel="stylesheet" href="./variants.css?v=20260813-4" />
 </head>
 <body>
   <header class="topbar">
@@ -473,7 +473,10 @@
             <option value="image">Solo immagini</option>
             <option value="all">Tutto</option>
           </select>
-          <input id="librarySearch" placeholder="Cerca layout…" />
+          <input id="librarySearch" placeholder="Cerca layout o tag…" />
+          <label id="libraryColsWrap" class="colsControl" hidden title="Colonne della galleria">
+            Colonne <input id="libraryColsRange" type="range" min="1" max="5" step="1" value="3"><span id="libraryColsLabel">3</span>
+          </label>
           <label id="librarySelectAllWrap" class="selectAllControl" title="Seleziona o deseleziona tutti gli elementi visibili">
             <input id="librarySelectAllCheckbox" type="checkbox" />
             <span id="librarySelectAllText">Seleziona tutto</span>
@@ -483,11 +486,16 @@
           <button id="bulkDeleteBtn" class="danger" disabled>Cancella selezionati</button>
           <button id="bulkCopyPathsBtn" disabled title="Copia i percorsi dei selezionati, uno per riga, per incollarli in chat">Copia</button>
           <button id="bulkRefreshThumbsBtn" disabled title="Ridisegna l'anteprima dei layout selezionati dal design aggiornato">Rigenera anteprime</button>
+          <button id="bulkMoveBtn" disabled title="Sposta i file selezionati in un'altra cartella (esistente o nuova)">Sposta</button>
+          <button id="bulkTagBtn" disabled title="Aggiungi un tag a tutti i selezionati">Tag</button>
           <button id="refreshLibraryBtn">Aggiorna</button>
           <button id="closeLibraryBtn">Chiudi</button>
         </div>
       </div>
+      <div id="tagFilterRow" class="tagFilterRow" hidden></div>
       <div id="libraryBreadcrumb" class="libraryBreadcrumb"></div>
+      <datalist id="libraryTagsDatalist"></datalist>
+      <datalist id="libraryFoldersDatalist"></datalist>
       <div id="libraryWorkspace" class="libraryWorkspace">
         <div id="layoutGrid" class="layoutGrid libraryList"></div>
         <aside id="librarySidePreview" class="librarySidePreview">
@@ -499,28 +507,28 @@
     </div>
   </div>
 
-  <script src="./fonts.js?v=20260813-3"></script>
-  <script src="./format-presets.js?v=20260813-3"></script>
-  <script src="./blend.js?v=20260813-3"></script>
-  <script src="./effects.js?v=20260813-3"></script>
-  <script src="./asset-src.js?v=20260813-3"></script>
-  <script src="./gradient.js?v=20260813-3"></script>
-  <script src="./svg-tint.js?v=20260813-3"></script>
-  <script src="./bg-remove-panel.js?v=20260813-3"></script>
-  <script src="./warp.js?v=20260813-3"></script>
-  <script src="./warp-editor.js?v=20260813-3"></script>
-  <script src="./shapes.js?v=20260813-3"></script>
-  <script src="./shape-editor.js?v=20260813-3"></script>
-  <script src="./shape-props.js?v=20260813-3"></script>
-  <script src="./image-process.js?v=20260813-3"></script>
-  <script src="./image-adjust.js?v=20260813-3"></script>
-  <script src="./text-style.js?v=20260813-3"></script>
-  <script src="./text-layout.js?v=20260813-3"></script>
-  <script src="./left-panel.js?v=20260813-3"></script>
-  <script src="./live-client.js?v=20260813-3"></script>
-  <script src="./inspector-controls.js?v=20260813-3"></script>
-  <script src="./app.js?v=20260813-3"></script>
-  <script src="./variants-panel.js?v=20260813-3"></script>
-  <script src="./library.js?v=20260813-3"></script>
+  <script src="./fonts.js?v=20260813-4"></script>
+  <script src="./format-presets.js?v=20260813-4"></script>
+  <script src="./blend.js?v=20260813-4"></script>
+  <script src="./effects.js?v=20260813-4"></script>
+  <script src="./asset-src.js?v=20260813-4"></script>
+  <script src="./gradient.js?v=20260813-4"></script>
+  <script src="./svg-tint.js?v=20260813-4"></script>
+  <script src="./bg-remove-panel.js?v=20260813-4"></script>
+  <script src="./warp.js?v=20260813-4"></script>
+  <script src="./warp-editor.js?v=20260813-4"></script>
+  <script src="./shapes.js?v=20260813-4"></script>
+  <script src="./shape-editor.js?v=20260813-4"></script>
+  <script src="./shape-props.js?v=20260813-4"></script>
+  <script src="./image-process.js?v=20260813-4"></script>
+  <script src="./image-adjust.js?v=20260813-4"></script>
+  <script src="./text-style.js?v=20260813-4"></script>
+  <script src="./text-layout.js?v=20260813-4"></script>
+  <script src="./left-panel.js?v=20260813-4"></script>
+  <script src="./live-client.js?v=20260813-4"></script>
+  <script src="./inspector-controls.js?v=20260813-4"></script>
+  <script src="./app.js?v=20260813-4"></script>
+  <script src="./variants-panel.js?v=20260813-4"></script>
+  <script src="./library.js?v=20260813-4"></script>
 </body>
 </html>

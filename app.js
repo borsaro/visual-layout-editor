@@ -1955,6 +1955,12 @@ function init(){
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
   $('bulkRefreshThumbsBtn')?.addEventListener('click', ()=>refreshSelectedThumbs());
+  $('bulkMoveBtn')?.addEventListener('click', ()=>moveSelectedItems());
+  $('bulkTagBtn')?.addEventListener('click', ()=>tagSelectedItems());
+  $('libraryColsRange')?.addEventListener('input', ()=>{
+    localStorage.setItem('robyLibraryCols', $('libraryColsRange').value);
+    applyLibraryColumns?.();
+  });
   const syncCropModeUi = ()=>{
     const b = $('cropModeBtn');
     if(!b) return;

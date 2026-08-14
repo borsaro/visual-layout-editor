@@ -402,6 +402,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 light = (q.get('light') or ['1'])[0] != '0'
                 folder_rel = clean_folder_rel((q.get('folder') or [''])[0])
                 folder = resolve_campaign_folder(folder_rel)
+                from library_meta import TagsCache
+                tags_cache = TagsCache()
                 folders = []
                 items = []
                 skipped_entries: list[str] = []
@@ -449,9 +451,9 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                         seen.add(rp)
                         try:
                             if rp.name.endswith('.layout.json'):
-                                items.append(layout_meta(rp, light=light))
+                                items.append({**layout_meta(rp, light=light), 'tags': tags_cache.tags_of(rp)})
                             elif rp.suffix.lower() in IMAGE_EXTS:
-                                items.append(image_meta(rp, light=light))
+                                items.append({**image_meta(rp, light=light), 'tags': tags_cache.tags_of(rp)})
                         except OSError:
                             skipped_entries.append(rel_path_for_error(rp))
                 parent = ''
@@ -467,6 +469,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'folder_count': len(folders),
                     'count': len(items),
                     'items': items,
+                    'all_tags': tags_cache.all_tags(),
                     # Surfaced, not swallowed: the UI can say what it could not read.
                     'skipped': skipped_entries,
                 })
@@ -493,6 +496,26 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 self._allow_cache = True
                 self.end_headers()
                 self.wfile.write(data)
+                return
+            if parsed.path == '/api/all-folders':
+                skip = {'node_modules', '.venv', '__pycache__', 'exports', 'thumbs'}
+                found = []
+                def walk(d, rel, depth):
+                    if depth > 6:
+                        return
+                    try:
+                        children = sorted(d.iterdir(), key=lambda x: x.name.lower())
+                    except OSError:
+                        return
+                    for c in children:
+                        if not c.is_dir() or c.name.startswith('.') or c.name in skip \
+                           or c.name.endswith('.variants'):
+                            continue
+                        r = f'{rel}/{c.name}' if rel else c.name
+                        found.append(r)
+                        walk(c, r, depth + 1)
+                walk(CAMPAIGNS_ROOT, '', 0)
+                self._json(200, {'ok': True, 'folders': found})
                 return
             if parsed.path == '/api/variants':
                 from variants import annotate_staleness, read_variants
@@ -579,6 +602,9 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/variants/delete',
             '/api/remove-background',
             '/api/bg-models',
+            '/api/create-folder',
+            '/api/move-items',
+            '/api/set-tags',
         ]:
             self.send_error(404, 'Unknown API endpoint')
             return
@@ -744,6 +770,56 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             if parsed.path == '/api/bg-models':
                 from bg_remove import catalog_payload
                 self._json(200, {'ok': True, **catalog_payload()})
+                return
+
+            if parsed.path == '/api/create-folder':
+                rel = clean_folder_rel(payload.get('path'))
+                if not rel:
+                    raise ValueError('Nome cartella mancante')
+                target = (CAMPAIGNS_ROOT / rel).resolve()
+                if not under(target, CAMPAIGNS_ROOT):
+                    raise ValueError('Cartella fuori dalla root campagne')
+                if target.exists():
+                    raise ValueError(f'La cartella {rel} esiste già')
+                target.mkdir(parents=True)
+                self._json(200, {'ok': True, 'folder': rel})
+                return
+
+            if parsed.path == '/api/move-items':
+                from library_meta import move_file
+                dest_rel = clean_folder_rel(payload.get('dest'))
+                dest_dir = (CAMPAIGNS_ROOT / dest_rel).resolve() if dest_rel else CAMPAIGNS_ROOT
+                if not under(dest_dir, CAMPAIGNS_ROOT):
+                    raise ValueError('Destinazione fuori dalla root campagne')
+                moved, errors = [], []
+                for raw in payload.get('items') or []:
+                    try:
+                        src = resolve_allowed_any(raw)
+                        if not src.is_file():
+                            raise ValueError('non è un file')
+                        if src.parent.resolve() == dest_dir:
+                            raise ValueError('già nella destinazione')
+                        move_file(src, dest_dir)
+                        moved.append(raw)
+                    except Exception as e:
+                        errors.append({'path': raw, 'error': str(e)})
+                self._json(200, {
+                    'ok': True, 'dest': dest_rel, 'moved': moved, 'errors': errors,
+                })
+                return
+
+            if parsed.path == '/api/set-tags':
+                from library_meta import set_tags
+                results = []
+                for entry in payload.get('items') or []:
+                    target = resolve_allowed_any(entry.get('path'))
+                    if not target.is_file():
+                        raise ValueError(f'Non è un file: {entry.get("path")}')
+                    results.append({
+                        'path': entry.get('path'),
+                        'tags': set_tags(target, entry.get('tags')),
+                    })
+                self._json(200, {'ok': True, 'items': results})
                 return
 
             if parsed.path == '/api/patch-layers':

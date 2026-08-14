@@ -3,6 +3,8 @@ state.libraryViewMode = localStorage.getItem('robyLibraryViewMode') || 'list';
 state.libraryFocusKey = null;
 state.libraryFoldersReady = false;
 state.libraryItemsReady = false;
+state.libraryTagFilter = new Set();
+state.libraryAllTags = [];
 
 let libraryLoadId = 0;
 let libraryScrollTimer = null;
@@ -53,7 +55,10 @@ async function fetchLibraryPhase(folder, phase){
     { cache: 'no-store' }
   );
   const payload = await res.json();
-  if(phase !== 'folders') state.libraryLoadedWithImages = wantImages;
+  if(phase !== 'folders'){
+    state.libraryLoadedWithImages = wantImages;
+    if(Array.isArray(payload.all_tags)) state.libraryAllTags = payload.all_tags;
+  }
   return payload;
 }
 
@@ -169,6 +174,151 @@ function renderLibraryBreadcrumb(){
     back.onclick = () => goLibraryFolder(parts.slice(0, -1).join('/'));
     box.prepend(back);
   }
+  const mk = document.createElement('button');
+  mk.textContent = '+ Nuova cartella';
+  mk.className = 'crumbBtn newFolder';
+  mk.title = 'Crea una cartella qui';
+  mk.onclick = createFolderHere;
+  box.appendChild(mk);
+}
+
+async function createFolderHere(){
+  const name = prompt('Nome della nuova cartella:');
+  if(!name || !name.trim()) return;
+  const rel = (state.currentLibraryFolder ? state.currentLibraryFolder + '/' : '') + name.trim();
+  try{
+    const res = await fetch('/api/create-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: rel }),
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'create failed');
+    showToast('Cartella creata: ' + data.folder);
+    await refreshLayoutLibrary();
+  }catch(e){
+    showToast('Cartella non creata: ' + (e.message || e));
+  }
+}
+
+/* ----------------------------------------------------------------- move */
+
+async function moveSelectedItems(){
+  const files = selectedLibraryEntries().filter(it => it.kind !== 'folder');
+  if(!files.length){ showToast('Seleziona almeno un file'); return; }
+  // Suggestions cover every folder in the tree; typing a path that does not exist
+  // yet creates it, so "existing folder" and "new folder" are the same gesture.
+  try{
+    const res = await fetch('/api/all-folders', { cache: 'no-store' });
+    const data = await res.json();
+    const dl = $('libraryFoldersDatalist');
+    if(dl && data.ok){
+      dl.innerHTML = '';
+      data.folders.forEach(f => {
+        const o = document.createElement('option');
+        o.value = f;
+        dl.appendChild(o);
+      });
+    }
+  }catch(e){ /* suggestions only */ }
+
+  const bar = $('bulkMoveBtn');
+  const panel = document.createElement('div');
+  panel.className = 'movePanel';
+  panel.innerHTML = `
+    <strong>Sposta ${files.length} file in:</strong>
+    <input id="moveDestInput" list="libraryFoldersDatalist" placeholder="Cartella/Sottocartella (nuova = la creo)" />
+    <div class="movePanelActions">
+      <button type="button" id="moveConfirmBtn" class="primary">Sposta</button>
+      <button type="button" id="moveCancelBtn">Annulla</button>
+    </div>`;
+  document.body.appendChild(panel);
+  const r = bar.getBoundingClientRect();
+  Object.assign(panel.style, { top: (r.bottom + 6) + 'px', left: Math.max(10, r.right - 300) + 'px' });
+  const input = panel.querySelector('#moveDestInput');
+  input.value = state.currentLibraryFolder || '';
+  input.focus();
+  input.select();
+
+  const close = () => panel.remove();
+  panel.querySelector('#moveCancelBtn').onclick = close;
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if(ev.key === 'Escape') close();
+    if(ev.key === 'Enter') panel.querySelector('#moveConfirmBtn').click();
+  });
+  panel.querySelector('#moveConfirmBtn').onclick = async () => {
+    const dest = input.value.trim();
+    close();
+    try{
+      const res = await fetch('/api/move-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: files.map(it => librarySelectPath(it)), dest }),
+      });
+      const data = await res.json();
+      if(!data.ok) throw new Error(data.error || 'move failed');
+      state.selectedLibraryPaths = [];
+      await refreshLayoutLibrary();
+      showToast(data.errors?.length
+        ? `${data.moved.length} spostati, ${data.errors.length} no: ${data.errors[0].error}`
+        : `${data.moved.length} file spostati in /${data.dest || ''}`);
+    }catch(e){
+      showToast('Spostamento fallito: ' + (e.message || e));
+    }
+  };
+}
+
+async function tagSelectedItems(){
+  const files = selectedLibraryEntries().filter(it => it.kind !== 'folder');
+  if(!files.length){ showToast('Seleziona almeno un file'); return; }
+  const tag = prompt(`Tag da aggiungere a ${files.length} file:`);
+  if(!tag || !tag.trim()) return;
+  try{
+    const res = await fetch('/api/set-tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: files.map(it => ({
+        path: librarySelectPath(it),
+        tags: [...(it.tags || []), tag.trim()],
+      })) }),
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || 'set-tags failed');
+    const byPath = new Map(data.items.map(x => [x.path, x.tags]));
+    files.forEach(it => { const t = byPath.get(librarySelectPath(it)); if(t) it.tags = t; });
+    const known = new Set((state.libraryAllTags || []).map(t => t.toLowerCase()));
+    if(!known.has(tag.trim().toLowerCase())) state.libraryAllTags.push(tag.trim());
+    renderLibraryGrid();
+    showToast(`Tag "${tag.trim()}" su ${files.length} file`);
+  }catch(e){
+    showToast('Tag non applicato: ' + (e.message || e));
+  }
+}
+
+/* --------------------------------------------------------------- columns */
+
+/** 1..5 colonne in galleria: meno colonne = anteprime più grandi. */
+const LIBRARY_PREVIEW_HEIGHTS = { 1: 560, 2: 420, 3: 300, 4: 230, 5: 180 };
+
+function applyLibraryColumns(){
+  const grid = $('layoutGrid');
+  const wrap = $('libraryColsWrap');
+  const isGrid = state.libraryViewMode === 'grid';
+  if(wrap) wrap.hidden = !isGrid;
+  if(!grid) return;
+  if(!isGrid){
+    grid.style.gridTemplateColumns = '';
+    grid.style.removeProperty('--previewH');
+    return;
+  }
+  const n = Math.max(1, Math.min(5, Number(localStorage.getItem('robyLibraryCols')) || 3));
+  const range = $('libraryColsRange');
+  if(range) range.value = String(n);
+  const label = $('libraryColsLabel');
+  if(label) label.textContent = String(n);
+  grid.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+  grid.style.setProperty('--previewH', LIBRARY_PREVIEW_HEIGHTS[n] + 'px');
 }
 
 function goLibraryFolder(folder){
@@ -202,12 +352,151 @@ function closeLayoutLibrary(){ $('layoutLibraryModal').hidden = true; }
 function visibleLibraryItems(){
   const q = ($('librarySearch')?.value || '').toLowerCase().trim();
   const kindFilter = $('libraryKindFilter')?.value || 'layout';
-  const folders = (state.libraryFolders || []).filter(f => !q || (f.name + ' ' + f.rel).toLowerCase().includes(q));
+  const tagFilter = state.libraryTagFilter || new Set();
+  // A tag filter is about files: folders have no tags, so they step aside while it is on.
+  const folders = tagFilter.size ? [] :
+    (state.libraryFolders || []).filter(f => !q || (f.name + ' ' + f.rel).toLowerCase().includes(q));
   const items = state.libraryItems.filter(it => {
     if(kindFilter !== 'all' && it.kind !== kindFilter) return false;
-    return !q || (it.name + ' ' + it.rel + ' ' + it.path + ' ' + (it.kind || '')).toLowerCase().includes(q);
+    const tags = (it.tags || []).map(t => String(t).toLowerCase());
+    if(tagFilter.size && ![...tagFilter].every(t => tags.includes(t))) return false;
+    const hay = (it.name + ' ' + it.rel + ' ' + it.path + ' ' + (it.kind || '') + ' ' + tags.join(' ')).toLowerCase();
+    return !q || hay.includes(q);
   });
   return [...folders, ...items];
+}
+
+/* ------------------------------------------------------------------ tags */
+
+function syncTagsDatalist(){
+  const dl = $('libraryTagsDatalist');
+  if(!dl) return;
+  dl.innerHTML = '';
+  (state.libraryAllTags || []).forEach(t => {
+    const o = document.createElement('option');
+    o.value = t;
+    dl.appendChild(o);
+  });
+}
+
+function renderTagFilterRow(){
+  const row = $('tagFilterRow');
+  if(!row) return;
+  const tags = state.libraryAllTags || [];
+  row.hidden = tags.length === 0;
+  row.innerHTML = '';
+  if(!tags.length){
+    if(state.libraryTagFilter.size){ state.libraryTagFilter.clear(); }
+    return;
+  }
+  tags.forEach(tag => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    const active = state.libraryTagFilter.has(tag.toLowerCase());
+    chip.className = 'tagChip filter' + (active ? ' active' : '');
+    chip.textContent = tag;
+    chip.title = active ? 'Togli dal filtro' : 'Filtra per questo tag';
+    chip.onclick = () => {
+      const key = tag.toLowerCase();
+      if(state.libraryTagFilter.has(key)) state.libraryTagFilter.delete(key);
+      else state.libraryTagFilter.add(key);
+      renderLibraryGrid();
+    };
+    row.appendChild(chip);
+  });
+  if(state.libraryTagFilter.size){
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'tagChip clear';
+    clear.textContent = '✕ filtri';
+    clear.onclick = () => { state.libraryTagFilter.clear(); renderLibraryGrid(); };
+    row.appendChild(clear);
+  }
+}
+
+async function setItemTags(item, tags){
+  const path = librarySelectPath(item);
+  if(!path) return;
+  const res = await fetch('/api/set-tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [{ path, tags }] }),
+  });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || 'set-tags failed');
+  item.tags = data.items?.[0]?.tags || [];
+  // A brand-new tag must show up in suggestions and in the filter row at once.
+  const known = new Set((state.libraryAllTags || []).map(t => t.toLowerCase()));
+  item.tags.forEach(t => { if(!known.has(t.toLowerCase())) state.libraryAllTags.push(t); });
+  state.libraryAllTags.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
+/** Chips + inline "+tag" input, shared by list rows and gallery cards. */
+function buildTagsStrip(item){
+  const strip = document.createElement('div');
+  strip.className = 'tagStrip';
+  (item.tags || []).forEach(tag => {
+    const chip = document.createElement('span');
+    chip.className = 'tagChip';
+    const label = document.createElement('span');
+    label.textContent = tag;
+    label.title = 'Filtra per questo tag';
+    label.onclick = (ev) => {
+      ev.stopPropagation();
+      state.libraryTagFilter.add(tag.toLowerCase());
+      renderLibraryGrid();
+    };
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'tagRemove';
+    x.textContent = '×';
+    x.title = 'Rimuovi tag';
+    x.onclick = async (ev) => {
+      ev.stopPropagation();
+      try{
+        await setItemTags(item, (item.tags || []).filter(t => t !== tag));
+        renderLibraryGrid();
+      }catch(e){ showToast('Tag non rimosso: ' + (e.message || e)); }
+    };
+    chip.append(label, x);
+    strip.appendChild(chip);
+  });
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'tagChip add';
+  add.textContent = '+ tag';
+  add.title = 'Aggiungi un tag';
+  add.onclick = (ev) => {
+    ev.stopPropagation();
+    const input = document.createElement('input');
+    input.className = 'tagInput';
+    input.setAttribute('list', 'libraryTagsDatalist');
+    input.placeholder = 'tag…';
+    add.replaceWith(input);
+    input.focus();
+    let done = false;
+    const finish = async (save) => {
+      if(done) return;
+      done = true;
+      const value = input.value.trim();
+      input.replaceWith(add);
+      if(!save || !value) return;
+      try{
+        await setItemTags(item, [...(item.tags || []), value]);
+        renderLibraryGrid();
+      }catch(e){ showToast('Tag non salvato: ' + (e.message || e)); }
+    };
+    input.addEventListener('keydown', (ev2) => {
+      ev2.stopPropagation();
+      if(ev2.key === 'Enter') finish(true);
+      if(ev2.key === 'Escape') finish(false);
+    });
+    input.addEventListener('click', ev2 => ev2.stopPropagation());
+    input.addEventListener('blur', () => finish(!!input.value.trim()));
+  };
+  strip.appendChild(add);
+  strip.onclick = (ev) => ev.stopPropagation();
+  return strip;
 }
 
 function isLibraryMultiSelectModifier(ev){
@@ -301,6 +590,17 @@ function updateBulkActionButtons(){
   if(copyBtn){
     copyBtn.disabled = count === 0;
     copyBtn.textContent = count ? `Copia (${count})` : 'Copia';
+  }
+  const fileCount = selectedLibraryEntries().filter(it => it.kind !== 'folder').length;
+  const moveBtn = $('bulkMoveBtn');
+  if(moveBtn){
+    moveBtn.disabled = fileCount === 0;
+    moveBtn.textContent = fileCount ? `Sposta (${fileCount})` : 'Sposta';
+  }
+  const tagBtn = $('bulkTagBtn');
+  if(tagBtn){
+    tagBtn.disabled = fileCount === 0;
+    tagBtn.textContent = fileCount ? `Tag (${fileCount})` : 'Tag';
   }
   const thumbsBtn = $('bulkRefreshThumbsBtn');
   if(thumbsBtn && !bulkThumbsRunning){
@@ -725,6 +1025,9 @@ function renderLibraryGrid(){
   if(!grid) return;
   bindLibraryListScroll();
   syncLibraryViewChrome();
+  renderTagFilterRow();
+  syncTagsDatalist();
+  applyLibraryColumns();
   updateBulkExportButton();
   const items = visibleLibraryItems();
   const listMode = state.libraryViewMode === 'list';
@@ -781,6 +1084,7 @@ function buildLibraryRow(item){
   const metaEl = document.createElement('small');
   metaEl.textContent = `${badge} · ${item.rel || item.name}`;
   title.append(nameEl, metaEl);
+  if(item.kind !== 'folder') title.appendChild(buildTagsStrip(item));
 
   const openBtn = document.createElement('button');
   openBtn.className = 'libraryRowOpen';
@@ -919,6 +1223,7 @@ function buildLibraryCard(item){
     mtimeMeta.textContent = item.mtime_iso;
     info.appendChild(mtimeMeta);
   }
+  info.appendChild(buildTagsStrip(item));
   const actions = document.createElement('div');
   actions.className = 'layoutActions';
   const openBtn = document.createElement('button');
