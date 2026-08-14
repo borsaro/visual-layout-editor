@@ -201,6 +201,7 @@ function render(opts = {}) {
   if(state.showSafeGuides) canvas.appendChild(renderSafeGuides());
   // Mask ABOVE layers so overflow (incl. screen blend) is dimmed; hole = artboard
   canvas.appendChild(renderCanvasOverflowMask());
+  renderSelectionOverlay(canvas);
   renderWarpOverlay(canvas);
   if(!opts.skipProps){
     renderLayerList();
@@ -227,6 +228,46 @@ function refreshLayerOnStage(layer){
   }
   updateCanvasInfo();
 }
+/**
+ * Selection outline and resize handles, in an overlay ABOVE the overflow mask.
+ * They used to live inside the layer node, where the dimming mask covered every
+ * part extending past the artboard: a corner outside the canvas was barely
+ * visible and looked dead even though it still worked. A child cannot escape its
+ * parent's stacking context, so the only way over the mask is a sibling overlay.
+ */
+function renderSelectionOverlay(canvas){
+  const sel = selectedLayers().filter(layerVisible);
+  if(!sel.length) return;
+  const ov = document.createElement('div');
+  ov.className = 'selectionOverlay';
+  sel.forEach((layer)=>{
+    const box = document.createElement('div');
+    box.className = 'selOverlayBox'
+      + (layerLocked(layer) ? ' locked' : '')
+      + (layer.type === 'image' ? ' image' : '');
+    Object.assign(box.style, {
+      left: layer.x + 'px', top: layer.y + 'px', width: layer.w + 'px', height: layer.h + 'px',
+      transform: layerHasWarp(layer)
+        ? mat3ToCssMatrix3d(layerFullMatrix(layer))
+        : `rotate(${Number(layer.rotation)||0}deg) skew(${Number(layer.skewX)||0}deg, ${Number(layer.skewY)||0}deg)`,
+      transformOrigin: layerHasWarp(layer) ? '0 0' : 'center center',
+    });
+    const editingVertices = vertexEditActive(layer) && isSelected(layer.id) && !layerLocked(layer);
+    if(!layerLocked(layer) && !editingVertices && !warpEditActive(layer)){
+      ['nw','ne','sw','se'].forEach(pos=>{
+        const handle = document.createElement('div');
+        handle.className = `resizeHandle handle-${pos}`;
+        handle.dataset.handle = pos;
+        handle.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
+        handle.addEventListener('mousedown', (ev)=>startDrag(ev, layer.id, pos));
+        box.appendChild(handle);
+      });
+    }
+    ov.appendChild(box);
+  });
+  canvas.appendChild(ov);
+}
+
 function renderCanvasOverflowMask(){
   const mask = document.createElement('div');
   mask.className = 'canvasOverflowMask';
@@ -362,15 +403,6 @@ function renderLayer(layer) {
   if(editingVertices){
     el.classList.add('vertexEditing');
     appendVertexHandles(el, layer);
-  }
-  if(!layerLocked(layer) && !editingVertices && !warpEditActive(layer)){
-    ['nw','ne','sw','se'].forEach(pos=>{
-      const handle = document.createElement('div');
-      handle.className = `resizeHandle handle-${pos}`;
-      handle.dataset.handle = pos;
-      handle.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); return false; };
-      el.appendChild(handle);
-    });
   }
   el.addEventListener('mousedown', (ev) => startDrag(ev, layer.id, ev.target?.dataset?.handle || null));
   return el;
