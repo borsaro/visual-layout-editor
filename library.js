@@ -490,16 +490,35 @@ function bindLibraryBackdrop(){
   });
 }
 
+/** Same path bulk "Copia" puts on the clipboard — for LLM / chat paste. */
+function copyLibraryItemPath(item){
+  const path = librarySelectPath(item);
+  if(!path) return Promise.reject(new Error('Nessun percorso'));
+  return copyTextToClipboard(path).then(() => {
+    showToast('Percorso copiato: ' + path);
+    return path;
+  });
+}
+
+function bindLibraryNameCopy(el, item){
+  if(!el || !librarySelectPath(item)) return;
+  el.classList.add('libraryNameCopy');
+  el.title = 'Clicca per copiare il percorso';
+  el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    copyLibraryItemPath(item).catch(e => showToast('Copia fallita: ' + (e.message || e)));
+  });
+}
+
 function copyPathLine(item){
   const line = document.createElement('small');
   line.className = 'libraryPathCopy';
   line.title = 'Clicca per copiare il percorso';
-  const path = item.kind === 'folder' ? (item.rel || item.name) : (item.path || item.rel || item.name);
+  const path = librarySelectPath(item);
   line.textContent = path;
-  line.onclick = () => {
-    copyTextToClipboard(path)
-      .then(() => showToast('Percorso copiato: ' + path))
-      .catch(e => showToast('Copia fallita: ' + (e.message || e)));
+  line.onclick = (ev) => {
+    ev.stopPropagation();
+    copyLibraryItemPath(item).catch(e => showToast('Copia fallita: ' + (e.message || e)));
   };
   return line;
 }
@@ -756,7 +775,12 @@ function buildLibraryRow(item){
   const title = document.createElement('div');
   title.className = 'libraryRowTitle';
   const badge = item.kind === 'folder' ? 'Cartella' : (item.kind === 'image' ? (item.has_layout ? 'Img+JSON' : 'Immagine') : 'Layout');
-  title.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${escapeHtml(item.rel || item.name)}</small>`;
+  const nameEl = document.createElement('strong');
+  nameEl.textContent = item.name;
+  bindLibraryNameCopy(nameEl, item);
+  const metaEl = document.createElement('small');
+  metaEl.textContent = `${badge} · ${item.rel || item.name}`;
+  title.append(nameEl, metaEl);
 
   const openBtn = document.createElement('button');
   openBtn.className = 'libraryRowOpen';
@@ -822,7 +846,12 @@ function buildLibraryCard(item){
     checkboxWrap.append(checkbox, checkboxText);
     const info = document.createElement('div');
     info.className = 'layoutInfo';
-    info.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>Cartella progetto · ${escapeHtml(item.rel || item.name)}</small>`;
+    const folderName = document.createElement('strong');
+    folderName.textContent = item.name;
+    bindLibraryNameCopy(folderName, item);
+    const folderMeta = document.createElement('small');
+    folderMeta.textContent = `Cartella progetto · ${item.rel || item.name}`;
+    info.append(folderName, folderMeta);
     const actions = document.createElement('div');
     actions.className = 'layoutActions';
     const openBtn = document.createElement('button');
@@ -879,7 +908,17 @@ function buildLibraryCard(item){
   info.className = 'layoutInfo';
   const badge = item.kind === 'image' ? (item.has_layout ? 'Immagine + layout' : 'Immagine') : 'Layout';
   const actionLabel = item.kind === 'image' ? (item.has_layout ? 'Apri layout' : 'Crea layout') : 'Apri';
-  info.innerHTML = `<strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(badge)} · ${escapeHtml(item.rel)}</small><small>${item.mtime_iso || ''}</small>`;
+  const nameEl = document.createElement('strong');
+  nameEl.textContent = item.name;
+  bindLibraryNameCopy(nameEl, item);
+  const kindMeta = document.createElement('small');
+  kindMeta.textContent = `${badge} · ${item.rel || ''}`;
+  info.append(nameEl, kindMeta);
+  if(item.mtime_iso){
+    const mtimeMeta = document.createElement('small');
+    mtimeMeta.textContent = item.mtime_iso;
+    info.appendChild(mtimeMeta);
+  }
   const actions = document.createElement('div');
   actions.className = 'layoutActions';
   const openBtn = document.createElement('button');

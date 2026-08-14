@@ -59,6 +59,8 @@
 .libraryRow,.layoutCard{-webkit-user-select:none;user-select:none}
 .libraryPathCopy{cursor:pointer;color:#93c5fd!important;text-decoration:underline dotted;word-break:break-all}
 .libraryPathCopy:hover{color:#bfdbfe!important}
+.libraryNameCopy{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.libraryNameCopy:hover{color:#93c5fd}
 .librarySidePreviewActions{display:flex;gap:8px;flex-wrap:wrap}
 .librarySidePreviewActions button{flex:1;min-width:110px}
 .sideFolderIcon{font-size:96px;line-height:1}
