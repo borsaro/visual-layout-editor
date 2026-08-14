@@ -146,7 +146,71 @@ function bindCollapsibleSections() {
   });
 }
 
+/**
+ * HEX companion for every native color swatch: the value is visible, one click
+ * selects it for copying, the small button copies it outright, and typing or
+ * pasting a valid hex (#abc or #aabbcc, # optional) applies the colour through
+ * the input's own events, so every existing binding keeps working untouched.
+ */
+function enhanceColorInput(input) {
+  if (!input || input.dataset.hexBound) return;
+  input.dataset.hexBound = '1';
+  const wrap = document.createElement('span');
+  wrap.className = 'colorValue';
+  input.before(wrap);
+  wrap.appendChild(input);
+
+  const hex = document.createElement('input');
+  hex.type = 'text';
+  hex.className = 'hexField';
+  hex.spellcheck = false;
+  hex.maxLength = 7;
+  hex.value = (input.value || '#000000').toLowerCase();
+  hex.setAttribute('aria-label', 'Valore HEX');
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'hexCopy';
+  copyBtn.textContent = '⧉';
+  copyBtn.title = 'Copia HEX';
+  wrap.append(hex, copyBtn);
+
+  const syncFromColor = () => { hex.value = (input.value || '').toLowerCase(); };
+  input._syncHexField = syncFromColor;
+  input.addEventListener('input', syncFromColor);
+
+  hex.addEventListener('focus', () => hex.select());
+  hex.addEventListener('click', () => hex.select());
+  const commit = () => {
+    let v = hex.value.trim();
+    if (v && !v.startsWith('#')) v = '#' + v;
+    if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + [...v.slice(1)].map((c) => c + c).join('');
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+      input.value = v.toLowerCase();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    syncFromColor();   // invalid text snaps back to the real colour instead of lying
+  };
+  hex.addEventListener('change', commit);
+  hex.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();   // canvas shortcuts (frecce, cmd+c) must not fire while typing here
+    if (ev.key === 'Enter') { commit(); hex.blur(); }
+    if (ev.key === 'Escape') { syncFromColor(); hex.blur(); }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await copyTextToClipboard(input.value);
+      showToast('Copiato ' + input.value);
+    } catch (e) {
+      showToast('Copia fallita: ' + (e.message || e));
+    }
+  });
+}
+
 function initInspectorControls() {
+  document.querySelectorAll('.panel input[type="color"]').forEach(enhanceColorInput);
   Object.entries(INSPECTOR_SLIDERS).forEach(([id, config]) => enhanceNumericInput(document.getElementById(id), config));
   document.querySelectorAll('.panel.right input[type="number"]').forEach(enhanceNumberKeys);
   createSegmentedControl(document.getElementById('propAlign'), [

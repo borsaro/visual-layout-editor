@@ -653,6 +653,7 @@ function setVal(id,v){
   el.value = v ?? '';
   el._syncQuickRange?.();
   el._syncSegmented?.();
+  el._syncHexField?.();
 }
 function syncFontSizeRange(v){
   const range = $('propFontSizeRange');
