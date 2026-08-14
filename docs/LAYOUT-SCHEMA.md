@@ -166,7 +166,8 @@ Preset `shapeKind`: `rect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexag
 ### mask_image
 
 - **how**: Set maskKind on an image layer to clip it through a shape (hexagon, star, ellipse…). maskCorner rounds the corners, maskPoints warps individual vertices (normalized 0..1), maskKind none removes it. Works via patch_live_layers and patch_layout_file like any other field
-- **example_patch**: `{"id": "layer_photo", "maskKind": "hexagon", "maskCorner": 24}`
+- **prefer_over**: Baking rounded corners or cutouts into the source PNG: a baked radius is frozen at asset resolution and cannot be adjusted in the editor, while the mask stays editable and composes with warp
+- **example_patch**: `{"id": "layer_photo", "maskKind": "rect", "maskCorner": 24}`
 
 ### edit_live
 

@@ -301,7 +301,10 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
                        'ellipse…). maskCorner rounds the corners, maskPoints warps individual '
                        'vertices (normalized 0..1), maskKind none removes it. Works via '
                        'patch_live_layers and patch_layout_file like any other field',
-                'example_patch': {'id': 'layer_photo', 'maskKind': 'hexagon', 'maskCorner': 24},
+                'prefer_over': 'Baking rounded corners or cutouts into the source PNG: a baked '
+                               'radius is frozen at asset resolution and cannot be adjusted in '
+                               'the editor, while the mask stays editable and composes with warp',
+                'example_patch': {'id': 'layer_photo', 'maskKind': 'rect', 'maskCorner': 24},
             },
             'edit_live': {
                 'how': 'GET /api/live/state?path= to read that design on screen, '
