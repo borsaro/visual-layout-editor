@@ -298,8 +298,14 @@ async function tagSelectedItems(){
 
 /* --------------------------------------------------------------- columns */
 
-/** 1..5 colonne in galleria: meno colonne = anteprime più grandi. */
-const LIBRARY_PREVIEW_HEIGHTS = { 1: 560, 2: 420, 3: 300, 4: 230, 5: 180 };
+/**
+ * 1..5 colonne in galleria: meno colonne = anteprime più grandi.
+ *
+ * The preview keeps the artboard's portrait ratio and is only capped, instead of
+ * being pinned to a fixed height: a height that ignores the column width stretches
+ * the box out of proportion and pushes the card past its neighbours.
+ */
+const LIBRARY_PREVIEW_MAX = { 1: 560, 2: 440, 3: 320, 4: 250, 5: 195 };
 
 function applyLibraryColumns(){
   const grid = $('layoutGrid');
@@ -308,8 +314,8 @@ function applyLibraryColumns(){
   if(wrap) wrap.hidden = !isGrid;
   if(!grid) return;
   if(!isGrid){
-    grid.style.gridTemplateColumns = '';
-    grid.style.removeProperty('--previewH');
+    grid.style.removeProperty('grid-template-columns');
+    grid.style.removeProperty('--previewMax');
     return;
   }
   const n = Math.max(1, Math.min(5, Number(localStorage.getItem('robyLibraryCols')) || 3));
@@ -317,8 +323,10 @@ function applyLibraryColumns(){
   if(range) range.value = String(n);
   const label = $('libraryColsLabel');
   if(label) label.textContent = String(n);
-  grid.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
-  grid.style.setProperty('--previewH', LIBRARY_PREVIEW_HEIGHTS[n] + 'px');
+  // The stylesheet sets the columns with !important, which beats a plain inline
+  // style — the slider only takes effect if it declares itself important too.
+  grid.style.setProperty('grid-template-columns', `repeat(${n}, minmax(0, 1fr))`, 'important');
+  grid.style.setProperty('--previewMax', LIBRARY_PREVIEW_MAX[n] + 'px');
 }
 
 function goLibraryFolder(folder){
