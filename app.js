@@ -19,6 +19,7 @@ const state = {
   vertexEditId: null, // shape layer currently in per-vertex warp mode
   warpMode: localStorage.getItem('robyWarpMode') === '1', // corner-distort editing on the canvas
   cropMode: localStorage.getItem('robyCropMode') === '1', // handles crop instead of resizing
+  marqueeMode: localStorage.getItem('robyMarqueeMode') === '1', // drag always rubber-bands, even over a layer
   warpModeTemp: false, // Option/Alt held: distort until the key is released
   campaignsRoot: '',
   editorRoot: '',
@@ -733,6 +734,9 @@ function groupBox(layers){
   return {x,y,w:r-x,h:b-y};
 }
 function startDrag(ev, id, handle=null){
+  // In marquee mode a drag over a layer must reach the canvas, so this bails out
+  // WITHOUT stopping propagation — the handles stay live, or resizing would die too.
+  if(!handle && state.marqueeMode) return;
   ev.preventDefault(); ev.stopPropagation();
   const target = state.layers.find(l => l.id === id);
   if(!handle && isSelectionModifier(ev)){
@@ -870,7 +874,10 @@ function onMove(ev){
 function endDrag(){ drag=null; markDirty(); document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',endDrag); }
 
 function startMarquee(ev){
-  if(ev.target !== $('canvas')) return;
+  // Every real ad has a full-bleed background, so "empty canvas" often does not
+  // exist: without the toggle there would be nowhere left to start a rubber band.
+  if(ev.target !== $('canvas') && !state.marqueeMode) return;
+  if(ev.target?.closest?.('.resizeHandle, .vertexHandle, .warpHandle')) return;
   ev.preventDefault();
   const rect=$('canvas').getBoundingClientRect(); const scale=state.zoom/100;
   const sx=(ev.clientX-rect.left)/scale, sy=(ev.clientY-rect.top)/scale;
@@ -1968,6 +1975,18 @@ function init(){
     b.classList.toggle('active', !!state.cropMode);
     b.setAttribute('aria-pressed', state.cropMode ? 'true' : 'false');
   };
+  const syncMarqueeModeUi = ()=>{
+    const b = $('marqueeModeBtn');
+    if(!b) return;
+    b.classList.toggle('active', !!state.marqueeMode);
+    b.setAttribute('aria-pressed', state.marqueeMode ? 'true' : 'false');
+  };
+  $('marqueeModeBtn')?.addEventListener('click', ()=>{
+    state.marqueeMode = !state.marqueeMode;
+    localStorage.setItem('robyMarqueeMode', state.marqueeMode ? '1' : '0');
+    syncMarqueeModeUi();
+  });
+  syncMarqueeModeUi();
   $('cropModeBtn')?.addEventListener('click', ()=>{
     state.cropMode = !state.cropMode;
     localStorage.setItem('robyCropMode', state.cropMode ? '1' : '0');
