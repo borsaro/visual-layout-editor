@@ -111,6 +111,9 @@ def validate_variants(variants: Any) -> list[dict]:
             'axes': [str(a) for a in axes],
             'ops': _validated_ops(raw.get('ops'), i),
             'promoted': raw.get('promoted') or None,
+            # Which variant this one was duplicated from (None = the base). Kept so the
+            # strip can show the parent's picture until the copy has one of its own.
+            'from': safe_variant_id(raw['from']) if raw.get('from') else None,
         })
     return out
 

@@ -169,7 +169,12 @@ async function loadVariants({ quiet = true } = {}) {
     const res = await fetch('/api/variants?path=' + encodeURIComponent(path), { cache: 'no-store' });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'variants failed');
-    VARIANTS_STATE.payload = data;
+    // Variants created here are not on disk yet: a reload of the set — the one fired
+    // when the layout opens, or an agent writing the file — must not delete them.
+    const onDisk = data.variants || [];
+    const unsaved = (VARIANTS_STATE.payload?.variants || [])
+      .filter((v) => VARIANTS_STATE.newIds.has(v.id) && !onDisk.some((d) => d.id === v.id));
+    VARIANTS_STATE.payload = unsaved.length ? { ...data, variants: [...onDisk, ...unsaved] } : data;
     if (VARIANTS_STATE.activeId && !(data.variants || []).some((v) => v.id === VARIANTS_STATE.activeId)) {
       VARIANTS_STATE.activeId = null;
     }
@@ -273,6 +278,13 @@ function baseVariantCard() {
     img.alt = 'Base';
     img.src = '/api/layout-preview?path=' + encodeURIComponent(path);
     img.onerror = () => {
+      // Same as for an unsaved variant: a layout with no preview sidecar yet still has
+      // a picture — the one on the canvas.
+      if (img.dataset.triedLocal !== '1') {
+        img.dataset.triedLocal = '1';
+        drawVariantThumbLocally({ id: null }, img);
+        return;
+      }
       const ph = document.createElement('div');
       ph.className = 'variantThumbMissing';
       ph.textContent = 'senza anteprima';
@@ -306,6 +318,26 @@ function baseVariantCard() {
   return card;
 }
 
+/**
+ * Draw a variant's thumbnail here, from base + its ops.
+ * Saved thumbnails are rendered server-side at save time; this is the same picture for
+ * the ones not saved yet, so a duplicate created a second ago is never a blank card.
+ */
+async function drawVariantThumbLocally(variant, img) {
+  try {
+    // id null = the base card: base layers, no ops on top.
+    const layers = variant.id
+      ? applyVariantOps(currentBaseLayers(), effectiveOpsOf(variant.id))
+      : JSON.parse(JSON.stringify(currentBaseLayers()));
+    const layout = { canvas: state.canvas, layers };
+    const canvas = await renderLayoutPreviewCanvas(layout);
+    img.classList.add('isLocalThumb');
+    img.src = canvas.toDataURL('image/jpeg', 0.72);
+  } catch (_) {
+    img.dispatchEvent(new Event('error'));   // fall through to the placeholder
+  }
+}
+
 function variantCard(variant) {
   const card = document.createElement('div');
   card.className = 'variantCard' + (variant.stale ? ' isStale' : '');
@@ -320,6 +352,14 @@ function variantCard(variant) {
   img.alt = variant.label || variant.id;
   img.src = `/api/variant-thumb?path=${encodeURIComponent(path)}&id=${encodeURIComponent(variant.id)}`;
   img.onerror = () => {
+    // Nothing on disk yet — a variant created a second ago, or one whose source has
+    // never been saved either. An empty card reads as "the duplicate came out blank",
+    // so draw what it looks like right now, here, and show that instead.
+    if (img.dataset.triedLocal !== '1') {
+      img.dataset.triedLocal = '1';
+      drawVariantThumbLocally(variant, img);
+      return;
+    }
     const ph = document.createElement('div');
     ph.className = 'variantThumbMissing';
     ph.textContent = 'senza anteprima';
@@ -531,14 +571,24 @@ async function createVariantFromCanvas() {
     showToast('Salva prima il layout su disco: le varianti gli stanno accanto');
     return;
   }
-  const suggested = `Variante ${(VARIANTS_STATE.payload?.variants || []).length + 1}`;
-  const label = prompt('Nome della variante:', suggested);
+  // Duplicate of whatever is selected: the active variant, or the base when that is
+  // what is on the canvas. Naming the source in the prompt makes it obvious which of
+  // the two you are about to copy.
+  const sourceId = VARIANTS_STATE.activeId;
+  const source = (VARIANTS_STATE.payload?.variants || []).find((v) => v.id === sourceId);
+  const sourceLabel = source ? (source.label || source.id) : 'Base';
+  const suggested = `${sourceLabel} copia`;
+  const label = prompt(`Nuova variante come duplicato di "${sourceLabel}" — nome:`, suggested);
   if (label === null) return;
 
   captureCanvasIntoDraft();
   const id = nextVariantId();
   const ops = diffLayersToOps(currentBaseLayers(), state.layers);
-  const entry = { id, label: label || id, axes: ['manuale'], ops, stale: false, missingLayers: [] };
+  const entry = {
+    id, label: label || id, axes: source?.axes?.length ? [...source.axes] : ['manuale'],
+    ops, stale: false, missingLayers: [],
+    from: sourceId || null,   // what it was copied from, for the inherited thumbnail
+  };
   const existing = VARIANTS_STATE.payload?.variants || [];
 
   VARIANTS_STATE.payload = { ...(VARIANTS_STATE.payload || {}), variants: [...existing, entry] };
@@ -549,7 +599,7 @@ async function createVariantFromCanvas() {
   VARIANTS_STATE.anchorId = id;
   renderVariantsBar();
   markDirty();
-  showToast(`Variante "${label || id}" creata — modificala e poi Salva Json`);
+  showToast(`Variante "${label || id}" creata come copia di "${sourceLabel}" — modificala e poi Salva Json`);
 }
 
 /** The layers that belong in the base .layout.json, whatever is on the canvas. */
@@ -570,6 +620,7 @@ async function variantsAfterBaseSave() {
     note: v.note,
     axes: v.axes,
     promoted: v.promoted,
+    from: v.from ?? null,
     ops: effectiveOpsOf(v.id),
   }));
   const savedBase = !!VARIANTS_STATE.draftBase;

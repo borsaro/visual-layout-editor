@@ -152,3 +152,6 @@
   border-radius: 3px;
   pointer-events: none;
 }
+
+/* Thumbnail drawn in the page because the variant is not on disk yet. */
+.variantThumb.isLocalThumb { outline: 1px dashed #3f4a63; outline-offset: -1px; }
