@@ -162,3 +162,6 @@
 .variantCard.dropAfter { box-shadow: inset -3px 0 0 0 var(--accent); }
 .variantCard:not(.isBaseCard) { cursor: grab; }
 .variantCard.isDragging { cursor: grabbing; }
+
+/* The band needs somewhere to start: keep empty strip below the cards. */
+.variantsList { min-height: 200px; padding-bottom: 10px; }

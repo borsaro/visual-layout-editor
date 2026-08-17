@@ -252,7 +252,7 @@ function syncVariantsSelectionUi() {
     } else if (VARIANTS_STATE.payload?.baseChanged) {
       hint.textContent = 'Il layout base è cambiato: le varianti segnate potrebbero non applicarsi più.';
     } else {
-      hint.textContent = 'Click applica · Cmd/Shift+click o riquadro trascinato selezionano per l’eliminazione.';
+      hint.textContent = 'Click applica · trascina una card per riordinare · riquadro dal vuoto (o Cmd/Shift+click) per selezionare.';
     }
   }
 }
@@ -420,41 +420,59 @@ function variantCard(variant) {
  * same pixel: the band bails out as soon as a native drag takes over.
  */
 function bindVariantCardDrag(card, id) {
-  card.draggable = true;
-  card.addEventListener('dragstart', (ev) => {
-    ev.dataTransfer.setData('text/variant-id', id);
-    ev.dataTransfer.effectAllowed = 'move';
-    card.classList.add('isDragging');
-    VARIANTS_STATE.dragId = id;
-    VARIANTS_MARQUEE.active = false;
-    VARIANTS_MARQUEE.box?.remove();
-    VARIANTS_MARQUEE.box = null;
+  // Mouse events, not the HTML5 drag API: the strip scrolls horizontally, the rubber
+  // band lives on the same surface, and one gesture model for both keeps them from
+  // fighting over the same press. Under the threshold nothing happens and the click
+  // applies the variant; over it, this takes the gesture and swallows the click.
+  // The thumbnail is a native draggable: left alone, dragging a card would start
+  // dragging the picture out of the page instead of moving the card.
+  card.addEventListener('dragstart', (ev) => ev.preventDefault());
+  card.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0 || isLibraryMultiSelectModifier?.(ev)) return;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    let active = false;
+
+    const onMove = (move) => {
+      if (!active) {
+        if (Math.abs(move.clientX - startX) < VARIANTS_MARQUEE_THRESHOLD
+            && Math.abs(move.clientY - startY) < VARIANTS_MARQUEE_THRESHOLD) return;
+        active = true;
+        VARIANTS_STATE.dragId = id;
+        card.classList.add('isDragging');
+      }
+      const target = variantCardUnder(move.clientX, move.clientY);
+      clearVariantDropMarks();
+      if (target && target.dataset.id !== id) {
+        const rect = target.getBoundingClientRect();
+        target.classList.add(move.clientX < rect.left + rect.width / 2 ? 'dropBefore' : 'dropAfter');
+      }
+    };
+
+    const onUp = (up) => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!active) return;
+      card.classList.remove('isDragging');
+      const target = variantCardUnder(up.clientX, up.clientY);
+      clearVariantDropMarks();
+      VARIANTS_STATE.dragId = null;
+      VARIANTS_MARQUEE.endedAt = performance.now();   // swallow the click that follows
+      if (target && target.dataset.id && target.dataset.id !== id
+          && target.dataset.id !== VARIANT_BASE_CARD_ID) {
+        const rect = target.getBoundingClientRect();
+        reorderVariant(id, target.dataset.id, up.clientX < rect.left + rect.width / 2);
+      }
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
-  card.addEventListener('dragend', () => {
-    card.classList.remove('isDragging');
-    clearVariantDropMarks();
-    VARIANTS_STATE.dragId = null;
-  });
-  card.addEventListener('dragover', (ev) => {
-    if (!VARIANTS_STATE.dragId || VARIANTS_STATE.dragId === id) return;
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = 'move';
-    const rect = card.getBoundingClientRect();
-    const before = ev.clientX < rect.left + rect.width / 2;
-    clearVariantDropMarks();
-    card.classList.add(before ? 'dropBefore' : 'dropAfter');
-  });
-  card.addEventListener('dragleave', (ev) => {
-    if (!card.contains(ev.relatedTarget)) card.classList.remove('dropBefore', 'dropAfter');
-  });
-  card.addEventListener('drop', (ev) => {
-    ev.preventDefault();
-    const from = ev.dataTransfer.getData('text/variant-id') || VARIANTS_STATE.dragId;
-    const rect = card.getBoundingClientRect();
-    const before = ev.clientX < rect.left + rect.width / 2;
-    clearVariantDropMarks();
-    reorderVariant(from, id, before);
-  });
+}
+
+/** The card under the pointer, whatever is painted on top of it. */
+function variantCardUnder(x, y) {
+  return document.elementFromPoint(x, y)?.closest?.('.variantCard') || null;
 }
 
 function clearVariantDropMarks() {
@@ -519,7 +537,10 @@ function bindVariantsMarquee(list) {
   if (!list) return;
   list.addEventListener('mousedown', (ev) => {
     if (ev.button !== 0) return;
-    // Native image dragging would hijack the gesture before the threshold is met.
+    // A press on a card belongs to that card: click to apply, drag to reorder. The band
+    // starts from the empty space of the strip — the gaps between cards and the room
+    // after the last one. (The preventDefault below would also kill the native drag.)
+    if (ev.target.closest?.('.variantCard')) return;
     ev.preventDefault();
     VARIANTS_MARQUEE.startX = ev.clientX;
     VARIANTS_MARQUEE.startY = ev.clientY;
