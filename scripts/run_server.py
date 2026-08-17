@@ -239,21 +239,37 @@ def image_size(path: Path):
     return 1080, 1350
 
 
+# The gallery shows a canvas-size badge on every entry, so even light listings need
+# the dimensions. Reading them costs a JSON parse (layouts) or a header read (images),
+# so keep the answer for as long as the file itself is unchanged.
+_DIMS_CACHE: dict = {}
+
+
+def cached_dims(path: Path, st, compute):
+    key = str(path)
+    stamp = (int(st.st_mtime), st.st_size)
+    hit = _DIMS_CACHE.get(key)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        value = compute()
+    except Exception:
+        value = (None, None, None)
+    _DIMS_CACHE[key] = (stamp, value)
+    return value
+
+
+def _read_layout_dims(path: Path):
+    data = json.loads(path.read_text(encoding='utf-8'))
+    canvas = data.get('canvas') or {}
+    return canvas.get('width'), canvas.get('height'), len(data.get('layers') or [])
+
+
 def layout_meta(path: Path, light: bool = True):
     from library_preview import preview_url_for
     st = path.stat()
     rel, scope = rel_scope(path)
-    w = h = None
-    layer_count = None
-    if not light:
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-            canvas = data.get('canvas') or {}
-            layers = data.get('layers') or []
-            w = canvas.get('width'); h = canvas.get('height')
-            layer_count = len(layers)
-        except Exception:
-            pass
+    w, h, layer_count = cached_dims(path, st, lambda: _read_layout_dims(path))
     return {
         'kind': 'layout',
         'name': path.name,
@@ -272,9 +288,7 @@ def layout_meta(path: Path, light: bool = True):
 def image_meta(path: Path, light: bool = True):
     st = path.stat(); rel, scope = rel_scope(path)
     lp = path.with_name(path.stem + '.layout.json')
-    w = h = None
-    if not light:
-        w, h = image_size(path)
+    w, h, _ = cached_dims(path, st, lambda: (*image_size(path), 1))
     return {
         'kind': 'image',
         'name': path.name,
@@ -291,6 +305,26 @@ def image_meta(path: Path, light: bool = True):
         'preview_src': '/api/file?path=' + public_path(path),
         'asset_src': asset_src_for(path),
     }
+
+
+def notify_file_change(target, action: str, *, origin=None, **detail) -> int:
+    """Tell every editor holding this layout that the file underneath it just changed.
+
+    This is what makes an agent's work visible while it happens: the tools that write
+    files (not just the live-patch bridge) reach the open editor too, instead of the
+    change sitting on disk until somebody reloads by hand.
+    """
+    try:
+        from live_session import SESSION
+        path = public_path(target) if not isinstance(target, str) else target
+        return SESSION.notify('file', {
+            'path': path,
+            'action': action,
+            'at': time.time(),
+            **detail,
+        }, path=path, exclude=origin)
+    except Exception:
+        return 0   # a broken notification must never fail the write it announces
 
 
 def delete_library_target(kind: str, raw: str):
@@ -696,6 +730,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'thumbnail_error': thumb_error,
                     **annotate_staleness(read_variants(target), layout),
                 })
+                notify_file_change(target, 'variants', origin=payload.get('client'),
+                                   label=payload.get('label') or 'save_variants')
                 return
 
             if parsed.path == '/api/variants/promote':
@@ -708,6 +744,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'path': public_path(Path(res['path'])),
                     'filename': res['filename'],
                 })
+                notify_file_change(target, 'variants', origin=payload.get('client'),
+                                   label='promote_variant')
                 return
 
             if parsed.path == '/api/variants/delete':
@@ -730,6 +768,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     if vp.exists():
                         vp.unlink()
                 self._json(200, {'ok': True, 'removed': sorted(drop), 'remaining': len(kept)})
+                notify_file_change(target, 'variants', origin=payload.get('client'),
+                                   label='delete_variants')
                 return
 
             if parsed.path == '/api/remove-background':
@@ -836,6 +876,12 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 }
                 if payload.get('return_layout'):
                     body['layout'] = layout
+                notify_file_change(
+                    target, 'layout',
+                    origin=payload.get('client'),
+                    label=payload.get('label') or 'patch_layout_file',
+                    ids=[p.get('id') for p in (payload.get('patches') or []) if isinstance(p, dict) and p.get('id')],
+                )
                 self._json(200, body)
                 return
 
@@ -911,6 +957,8 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     raise ValueError('Only .layout.json files can be saved')
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding='utf-8')
+            notify_file_change(target, 'layout', origin=payload.get('client'),
+                               label=payload.get('label') or 'save-layout')
             self._json(200, {'ok': True, 'path': public_path(target), 'bytes': target.stat().st_size})
         except Exception as e:
             self._json(400, {'ok': False, 'error': str(e)})

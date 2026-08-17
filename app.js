@@ -874,14 +874,21 @@ function onMove(ev){
 function endDrag(){ drag=null; markDirty(); document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',endDrag); }
 
 function startMarquee(ev){
-  // Every real ad has a full-bleed background, so "empty canvas" often does not
-  // exist: without the toggle there would be nowhere left to start a rubber band.
-  if(ev.target !== $('canvas') && !state.marqueeMode) return;
+  // A drag on a layer moves that layer; the band belongs to everything else: bare
+  // canvas and the stage around the artboard, where the listener also sits. The
+  // toggle is what turns a drag over a layer into a band instead.
+  if(ev.button !== 0) return;
   if(ev.target?.closest?.('.resizeHandle, .vertexHandle, .warpHandle')) return;
+  if(ev.target?.closest?.('.layer') && !state.marqueeMode) return;
+  if(drag || marquee) return;   // canvas and stage both listen: whoever gets there first wins
   ev.preventDefault();
   const rect=$('canvas').getBoundingClientRect(); const scale=state.zoom/100;
   const sx=(ev.clientX-rect.left)/scale, sy=(ev.clientY-rect.top)/scale;
-  const el=document.createElement('div'); el.className='marquee'; $('canvas').appendChild(el);
+  const el=document.createElement('div'); el.className='marquee';
+  // Sized right away: a click that never moves must still be read as a zero-size band
+  // at the cursor, not as an unstyled box parsed back as (0,0).
+  Object.assign(el.style,{left:sx+'px',top:sy+'px',width:'0px',height:'0px'});
+  $('canvas').appendChild(el);
   marquee={sx,sy,el, additive: ev.shiftKey || ev.metaKey || ev.ctrlKey};
   document.addEventListener('mousemove', onMarqueeMove); document.addEventListener('mouseup', endMarquee);
 }
@@ -891,13 +898,25 @@ function onMarqueeMove(ev){
   const left=Math.min(marquee.sx,x), top=Math.min(marquee.sy,y), w=Math.abs(x-marquee.sx), h=Math.abs(y-marquee.sy);
   Object.assign(marquee.el.style,{left:left+'px',top:top+'px',width:w+'px',height:h+'px'});
 }
+/**
+ * A band that ends on bare canvas is followed by a plain click on the canvas, and the
+ * click handler clears the selection: the rubber band appeared to do nothing. The
+ * click right after a band is therefore swallowed.
+ */
+let marqueeEndedAt = 0;
+function marqueeJustEnded(){ return performance.now() - marqueeEndedAt < 250; }
+
 function endMarquee(){
   if(!marquee) return;
+  marqueeEndedAt = performance.now();
   const m={x:parseFloat(marquee.el.style.left)||0,y:parseFloat(marquee.el.style.top)||0,w:parseFloat(marquee.el.style.width)||0,h:parseFloat(marquee.el.style.height)||0};
   // Locked layers are not grabbable on the canvas, so a rubber band must not pick
   // them up either: dragging across one would otherwise pull it into a selection
   // that cannot be moved.
-  const hits=state.layers.filter(l=> layerVisible(l) && !layerLocked(l) && intersects(m,l)).map(l=>l.id);
+  let hits=state.layers.filter(l=> layerVisible(l) && !layerLocked(l) && intersects(m,l)).map(l=>l.id);
+  // A band that never moved is a plain click: it must select the topmost layer under
+  // the cursor, not the whole stack the point happens to fall on.
+  if(m.w < 3 && m.h < 3) hits = hits.slice(-1);
   if(!marquee.additive) state.selectedIds=[];
   hits.forEach(id=>{ if(!state.selectedIds.includes(id)) state.selectedIds.push(id); });
   state.selectedId=state.selectedIds.at(-1)||null;
@@ -1117,7 +1136,7 @@ async function saveJsonOverwrite(){
     const res = await fetch('/api/save-layout', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path: state.currentLayoutPath, layout: {...layoutPayload(), layers: baseLayers}}),
+      body: JSON.stringify({path: state.currentLayoutPath, layout: {...layoutPayload(), layers: baseLayers}, client: liveClientId?.()}),
     });
     const data = await res.json();
     if(!data.ok){ alert('Errore salvataggio JSON: ' + data.error); return; }
@@ -1894,14 +1913,17 @@ function addImageByPath(){
 
 function init(){
   $('canvas').addEventListener('mousedown', startMarquee);
+  // Outside the artboard counts too: a band started on the grey around it is often
+  // the only way to enclose layers that touch the edges.
+  document.querySelector('.stageScroller')?.addEventListener('mousedown', startMarquee);
   $('canvas').addEventListener('contextmenu', (ev)=>{ if(ev.target.closest?.('.layer')) ev.preventDefault(); });
   $('canvas').addEventListener('click', (ev)=>{
     if(ev.target !== $('canvas')) return;
-    if(isSelectionModifier(ev)) return;
+    if(isSelectionModifier(ev) || marqueeJustEnded()) return;
     clearLayerSelection();
   });
   document.querySelector('.stageScroller')?.addEventListener('mousedown', (ev)=>{
-    if(isSelectionModifier(ev)) return;
+    if(isSelectionModifier(ev) || marquee) return;
     if(ev.target.closest?.('#canvas, .layer, .layerContextMenu')) return;
     clearLayerSelection();
   });

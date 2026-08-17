@@ -136,3 +136,19 @@
 .variantCard.isChecked { border-color: #eab308; box-shadow: 0 0 0 1px #eab308 inset; }
 .variantCard.isChecked.isActive { box-shadow: 0 0 0 1px var(--blue) inset, 0 0 0 3px rgba(234, 179, 8, .35); }
 .variantCard.hasEdits .variantLabel:after { content: ' •'; color: var(--accent); }
+
+/* The base sits first in the strip and reads as its own thing, not a variant. */
+.variantsList { position: relative; }
+.variantCard.isBaseCard { border-color: #3f4a63; background: #121722; }
+.variantCard.isBaseCard .variantLabel { font-weight: 700; }
+.variantBadge.isBase { color: #cbd5e1; border-color: #4b5262; }
+
+/* Drag-box selection over the strip. */
+.variantsMarquee {
+  position: absolute;
+  z-index: 3;
+  border: 1px solid var(--blue);
+  background: rgba(79, 140, 255, .16);
+  border-radius: 3px;
+  pointer-events: none;
+}

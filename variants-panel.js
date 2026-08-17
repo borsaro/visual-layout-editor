@@ -22,6 +22,14 @@ const VARIANTS_STATE = {
   anchorId: null,      // last plainly-clicked card, for shift+click ranges
 };
 
+/**
+ * The base is shown as the first card of the strip, so the strip reads as the whole
+ * project instead of "everything except the thing you started from". It is a card,
+ * not a variant: it has no ops, it can never be ticked for deletion, and its id is
+ * this sentinel only inside the DOM — VARIANTS_STATE.activeId stays null for it.
+ */
+const VARIANT_BASE_CARD_ID = '__base__';
+
 function variantsBarEl() { return $('variantsBar'); }
 
 function variantsApplicableFields() {
@@ -191,18 +199,16 @@ function syncVariantsSelectionUi() {
 
   document.querySelectorAll('.variantCard').forEach((card) => {
     const id = card.dataset.id;
+    if (id === VARIANT_BASE_CARD_ID) {
+      card.classList.toggle('isActive', !activeId);
+      card.classList.toggle('hasEdits', activeId ? !!VARIANTS_STATE.draftBase : !!liveEdited);
+      return;
+    }
     const isActive = id === activeId;
     card.classList.toggle('isActive', isActive);
     card.classList.toggle('isChecked', VARIANTS_STATE.checked.has(id));
     card.classList.toggle('hasEdits', (isActive && !!liveEdited) || variantIsPending(id));
   });
-
-  const baseBtn = $('variantsBaseBtn');
-  if (baseBtn) {
-    baseBtn.classList.toggle('variantActive', !activeId);
-    const baseDirty = activeId ? !!VARIANTS_STATE.draftBase : !!liveEdited;
-    baseBtn.textContent = baseDirty ? 'Base •' : 'Base';
-  }
   const promote = $('variantsPromoteBtn');
   if (promote) promote.disabled = !activeId;
   const del = $('variantsDeleteBtn');
@@ -224,7 +230,7 @@ function syncVariantsSelectionUi() {
     } else if (VARIANTS_STATE.payload?.baseChanged) {
       hint.textContent = 'Il layout base è cambiato: le varianti segnate potrebbero non applicarsi più.';
     } else {
-      hint.textContent = 'Click applica · Cmd+click e Shift+click selezionano per l’eliminazione.';
+      hint.textContent = 'Click applica · Cmd/Shift+click o riquadro trascinato selezionano per l’eliminazione.';
     }
   }
 }
@@ -246,10 +252,58 @@ function renderVariantsBar() {
     // every <img> in a display:none subtree, where the fetch never starts and the
     // thumbnails stay blank after opening.
     if (!bar.classList.contains('isCollapsed')) {
+      list.appendChild(baseVariantCard());
       variants.forEach((variant) => list.appendChild(variantCard(variant)));
     }
   }
   syncVariantsSelectionUi();
+}
+
+/** First card of the strip: the base itself, always present, never deletable. */
+function baseVariantCard() {
+  const card = document.createElement('div');
+  card.className = 'variantCard isBaseCard';
+  card.dataset.id = VARIANT_BASE_CARD_ID;
+  card.title = 'Layout base — la versione scritta nel .layout.json';
+
+  const path = state.currentLayoutPath || '';
+  if (path) {
+    const img = document.createElement('img');
+    img.className = 'variantThumb';
+    img.alt = 'Base';
+    img.src = '/api/layout-preview?path=' + encodeURIComponent(path);
+    img.onerror = () => {
+      const ph = document.createElement('div');
+      ph.className = 'variantThumbMissing';
+      ph.textContent = 'senza anteprima';
+      img.replaceWith(ph);
+    };
+    card.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'variantThumbMissing';
+    ph.textContent = 'non salvato';
+    card.appendChild(ph);
+  }
+
+  const label = document.createElement('div');
+  label.className = 'variantLabel';
+  label.textContent = 'Base';
+  card.appendChild(label);
+
+  const badge = document.createElement('span');
+  badge.className = 'variantBadge isBase';
+  badge.textContent = 'base';
+  card.appendChild(badge);
+
+  card.addEventListener('click', () => {
+    if (variantsMarqueeJustFinished()) return;
+    VARIANTS_STATE.checked = new Set();
+    VARIANTS_STATE.anchorId = null;
+    restoreVariantBase();
+    syncVariantsSelectionUi();
+  });
+  return card;
 }
 
 function variantCard(variant) {
@@ -291,8 +345,95 @@ function variantCard(variant) {
     card.appendChild(badge);
   }
 
-  card.addEventListener('click', (ev) => selectVariant(variant.id, ev));
+  card.addEventListener('click', (ev) => {
+    if (variantsMarqueeJustFinished()) return;
+    selectVariant(variant.id, ev);
+  });
   return card;
+}
+
+/* ------------------------------------------------------------ box selection */
+
+/**
+ * Drag a box over the strip to tick several variants at once. It starts on cards too
+ * (there is barely any empty space between them), so a drag and a click have to be
+ * told apart: under the threshold nothing happens and the click applies the variant,
+ * over it the box takes over and the click that follows the release is swallowed.
+ */
+const VARIANTS_MARQUEE = { active: false, box: null, startX: 0, startY: 0, additive: false, kept: null, endedAt: 0 };
+const VARIANTS_MARQUEE_THRESHOLD = 5;
+
+function variantsMarqueeJustFinished() {
+  return performance.now() - VARIANTS_MARQUEE.endedAt < 250;
+}
+
+function bindVariantsMarquee(list) {
+  if (!list) return;
+  list.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0) return;
+    // Native image dragging would hijack the gesture before the threshold is met.
+    ev.preventDefault();
+    VARIANTS_MARQUEE.startX = ev.clientX;
+    VARIANTS_MARQUEE.startY = ev.clientY;
+    VARIANTS_MARQUEE.additive = ev.shiftKey || ev.metaKey || ev.ctrlKey;
+    // What was ticked before the drag, so shrinking the box really deselects.
+    VARIANTS_MARQUEE.kept = VARIANTS_MARQUEE.additive ? new Set(VARIANTS_STATE.checked) : new Set();
+    VARIANTS_MARQUEE.active = false;
+
+    const onMove = (move) => {
+      const dx = move.clientX - VARIANTS_MARQUEE.startX;
+      const dy = move.clientY - VARIANTS_MARQUEE.startY;
+      if (!VARIANTS_MARQUEE.active) {
+        if (Math.abs(dx) < VARIANTS_MARQUEE_THRESHOLD && Math.abs(dy) < VARIANTS_MARQUEE_THRESHOLD) return;
+        VARIANTS_MARQUEE.active = true;
+        VARIANTS_MARQUEE.box = document.createElement('div');
+        VARIANTS_MARQUEE.box.className = 'variantsMarquee';
+        list.appendChild(VARIANTS_MARQUEE.box);
+      }
+      const rect = {
+        left: Math.min(VARIANTS_MARQUEE.startX, move.clientX),
+        top: Math.min(VARIANTS_MARQUEE.startY, move.clientY),
+        right: Math.max(VARIANTS_MARQUEE.startX, move.clientX),
+        bottom: Math.max(VARIANTS_MARQUEE.startY, move.clientY),
+      };
+      const host = list.getBoundingClientRect();
+      Object.assign(VARIANTS_MARQUEE.box.style, {
+        left: (rect.left - host.left + list.scrollLeft) + 'px',
+        top: (rect.top - host.top + list.scrollTop) + 'px',
+        width: (rect.right - rect.left) + 'px',
+        height: (rect.bottom - rect.top) + 'px',
+      });
+      applyVariantsMarquee(list, rect);
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!VARIANTS_MARQUEE.active) return;
+      VARIANTS_MARQUEE.box?.remove();
+      VARIANTS_MARQUEE.box = null;
+      VARIANTS_MARQUEE.active = false;
+      VARIANTS_MARQUEE.endedAt = performance.now();
+      syncVariantsSelectionUi();
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+/** Everything the box touches gets ticked; the base card is not selectable. */
+function applyVariantsMarquee(list, rect) {
+  const base = new Set(VARIANTS_MARQUEE.kept || []);
+  list.querySelectorAll('.variantCard').forEach((card) => {
+    const id = card.dataset.id;
+    if (!id || id === VARIANT_BASE_CARD_ID) return;
+    const r = card.getBoundingClientRect();
+    const hit = r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top;
+    if (hit) base.add(id);
+  });
+  VARIANTS_STATE.checked = base;
+  syncVariantsSelectionUi();
 }
 
 /* ----------------------------------------------------------------- selection */
@@ -374,7 +515,7 @@ async function writeVariants(variants, { thumbnails = true, path = null } = {}) 
   const res = await fetch('/api/variants', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: target, variants, replace: true, thumbnails }),
+    body: JSON.stringify({ path: target, variants, replace: true, thumbnails, client: liveClientId?.() }),
   });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error || 'save variants failed');
@@ -496,7 +637,7 @@ async function deleteCheckedVariants() {
     const res = await fetch('/api/variants/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, ids }),
+      body: JSON.stringify({ path, ids, client: liveClientId?.() }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'delete failed');
@@ -526,7 +667,7 @@ function bindVariantsBar() {
   $('variantsToggle')?.addEventListener('click', () => {
     setVariantsBarOpen(variantsBarEl()?.classList.contains('isCollapsed'));
   });
-  $('variantsBaseBtn')?.addEventListener('click', restoreVariantBase);
+  bindVariantsMarquee($('variantsList'));
   $('variantsNewBtn')?.addEventListener('click', createVariantFromCanvas);
   $('variantsPromoteBtn')?.addEventListener('click', promoteActiveVariant);
   $('variantsDeleteBtn')?.addEventListener('click', deleteCheckedVariants);

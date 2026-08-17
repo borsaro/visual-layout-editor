@@ -104,6 +104,7 @@
         <button type="button" id="marqueeModeBtn" class="toolbarToggle" aria-pressed="false" title="Selezione a rettangolo — trascina per selezionare più layer anche partendo sopra un layer (Shift aggiunge)">Selezione</button>
         <button type="button" id="cropModeBtn" class="toolbarToggle" aria-pressed="false" title="Ritaglio immagine con le maniglie — naturale: proporzionale · Cmd: rettangolo libero · Alt: vertici indipendenti">Ritaglio</button>
         <span id="canvasInfo"></span>
+        <span id="liveActivity" class="liveActivity" hidden title="Modifiche in arrivo dall'agente"></span>
       </div>
       <div class="stageScroller">
         <div id="stage" class="stage">
@@ -119,7 +120,6 @@
         </button>
         <div class="variantsBarBody">
           <div class="variantsActions">
-            <button type="button" id="variantsBaseBtn" class="variantActive">Base</button>
             <button type="button" id="variantsNewBtn" title="Crea una variante come duplicato del layout base, poi modificala sul canvas">+ Nuova variante</button>
             <button type="button" id="variantsPromoteBtn" disabled>Promuovi a layout</button>
             <button type="button" id="variantsDeleteBtn" disabled>Elimina</button>

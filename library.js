@@ -881,6 +881,8 @@ function updateLibrarySidePreview(item){
   delBtn.onclick = () => deleteLibraryItem(item);
   actions.appendChild(delBtn);
   frame.innerHTML = '<div class="emptyGrid">Anteprima…</div>';
+  const sideSize = buildCanvasSizeBadge(item, 'onPreview');
+  if(sideSize) frame.appendChild(sideSize);
   loadPreviewInto(frame, item, { persist: true, expectKey: libraryItemKey(item) });
 }
 
@@ -1062,6 +1064,24 @@ function renderLibraryGrid(){
   else observeGridPreviews(grid);
 }
 
+/** "1080×1350" for anything whose canvas size the listing knows; '' otherwise. */
+function canvasSizeLabel(item){
+  const c = item && item.canvas;
+  const w = c && Number(c.width), h = c && Number(c.height);
+  if(!w || !h) return '';
+  return `${Math.round(w)}×${Math.round(h)}`;
+}
+
+function buildCanvasSizeBadge(item, cls){
+  const label = canvasSizeLabel(item);
+  if(!label) return null;
+  const el = document.createElement('span');
+  el.className = 'canvasSizeBadge' + (cls ? ' ' + cls : '');
+  el.textContent = label;
+  el.title = 'Dimensioni canvas: ' + label + ' px';
+  return el;
+}
+
 function buildLibraryRow(item){
   const key = libraryItemKey(item);
   const selectPath = librarySelectPath(item);
@@ -1092,6 +1112,8 @@ function buildLibraryRow(item){
   const metaEl = document.createElement('small');
   metaEl.textContent = `${badge} · ${item.rel || item.name}`;
   title.append(nameEl, metaEl);
+  const rowSize = buildCanvasSizeBadge(item);
+  if(rowSize) title.appendChild(rowSize);
   if(item.kind !== 'folder') title.appendChild(buildTagsStrip(item));
 
   const openBtn = document.createElement('button');
@@ -1197,6 +1219,8 @@ function buildLibraryCard(item){
     kind: item.kind, path: item.path, name: item.name, preview_src: item.preview_src || null,
   });
   preview.innerHTML = '<small class="muted">Anteprima…</small>';
+  const cardSize = buildCanvasSizeBadge(item, 'onPreview');
+  if(cardSize) preview.appendChild(cardSize);
 
   const checkboxWrap = document.createElement('label');
   checkboxWrap.className = 'librarySelect';
@@ -1273,7 +1297,8 @@ async function openLibraryItem(item){
 
 function mountPreviewNode(box, node){
   [...box.childNodes].forEach(n => {
-    if(!n.classList || (!n.classList.contains('librarySelect') && !n.classList.contains('libraryRowCheck'))) n.remove();
+    const keep = n.classList && (n.classList.contains('librarySelect') || n.classList.contains('libraryRowCheck') || n.classList.contains('canvasSizeBadge'));
+    if(!keep) n.remove();
   });
   box.appendChild(node);
 }

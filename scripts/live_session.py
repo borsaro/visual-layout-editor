@@ -142,6 +142,27 @@ class LiveHub:
                 return [], ERR_NO_MATCH
             return matches, None
 
+    def notify(self, event: str, data: dict, *, path: str | None = None,
+               exclude: str | None = None) -> int:
+        """Fire-and-forget fan-out, unlike broadcast(): a file written on disk is a
+        fact, not a request, so nobody listening is not an error. `exclude` keeps the
+        editor that did the writing from being told to reload its own save."""
+        want = norm_path(path)
+        skip = (exclude or '').strip() or None
+        with self._lock:
+            targets = [
+                e for e in self._clients.values()
+                if e.queue is not None and e.client_id != skip and (not want or e.path == want)
+            ]
+        sent = 0
+        for entry in targets:
+            try:
+                entry.queue.put_nowait((event, data))
+                sent += 1
+            except (queue.Full, AttributeError):
+                pass
+        return sent
+
     def broadcast(self, event: str, data: dict, *, client: str | None = None,
                   path: str | None = None) -> dict:
         targets, error = self.resolve_targets(client=client, path=path)

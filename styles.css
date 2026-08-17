@@ -145,3 +145,21 @@
 .actions .exportFmt{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .actions .exportFmt select,.actions .exportFmt input[type=range]{max-width:110px}
 #exportQualityLabel{min-width:1.6em;font-variant-numeric:tabular-nums;color:var(--text)}
+
+/* Canvas-size badge: over the thumbnail on cards and the side preview, inline in list rows. */
+.canvasSizeBadge{display:inline-flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:10px;line-height:1;color:#cbd5e1;background:#0f1116;border:1px solid var(--line);border-radius:999px;padding:3px 7px;white-space:nowrap}
+.canvasSizeBadge.onPreview{position:absolute;right:8px;bottom:8px;z-index:5;background:rgba(15,17,22,.86);border-color:rgba(255,255,255,.22);backdrop-filter:blur(4px);pointer-events:none}
+.librarySidePreviewFrame{position:relative}
+.libraryRowTitle .canvasSizeBadge{align-self:flex-start;margin-top:2px}
+
+/* Agent at work: a badge while edits arrive, and a pulse on the layers they touched. */
+.liveActivity{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#a7f3d0;background:rgba(16,185,129,.12);border:1px solid #1f7a55;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.liveActivity:before{content:'';width:7px;height:7px;border-radius:50%;background:#34d399}
+.liveActivity.isBusy:before{animation:robyLivePulse 1s ease-in-out infinite}
+@keyframes robyLivePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+.layer.liveTouched{animation:robyLiveTouch 1.4s ease-out 1}
+@keyframes robyLiveTouch{
+  0%{outline:2px solid #34d399;outline-offset:0;box-shadow:0 0 0 6px rgba(52,211,153,.35)}
+  70%{outline:2px solid #34d399;outline-offset:2px;box-shadow:0 0 0 10px rgba(52,211,153,0)}
+  100%{outline:0 solid transparent;box-shadow:none}
+}
