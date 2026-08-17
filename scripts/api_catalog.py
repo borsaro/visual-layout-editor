@@ -32,6 +32,46 @@ ENDPOINTS = [
     },
     {
         'method': 'POST',
+        'path': '/api/export-batch',
+        'desc': 'Export many layouts sharing one browser. {items:[path | {path,out}]}',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/add-layers',
+        'desc': 'Append layers to a layout on disk {path, layers:[{type,…}], index?} — id/z filled in',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/create-layout',
+        'desc': 'New layout from nothing {path, width, height, background?, layers?, overwrite?}',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/resize-canvas',
+        'desc': 'Move a design to another canvas, scaling its layers {path, width, height, scale_layers?, out?}',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/measure-image',
+        'desc': 'Pixels of an image {path, mode?dark|bright|alpha, threshold?} → size, box, quad, corner_radius, warp block',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/image-op',
+        'desc': 'Crop/resize/fit/pad/rotate an image into a new file {path, op, x,y,w,h|degrees, out?}',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/measure-text',
+        'desc': 'Wrapped lines, widest line, block height for text layers {layers:[…]} — same fonts as the export',
+    },
+    {
+        'method': 'POST',
+        'path': '/api/render-html',
+        'desc': 'Rasterise HTML to PNG {html, width?, height?, scale?, transparent?, out?}',
+    },
+    {
+        'method': 'POST',
         'path': '/api/patch-layers',
         'desc': 'Patch layer fields (locked/visible/…) without rewriting whole file. {path, patches:[{id|name, ...fields}]}',
     },
@@ -310,9 +350,43 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
                 },
             },
             'add_layer': {
-                'how': 'POST /api/patch-layers only edits existing layers. To add one, load the '
-                       'layout, append to layers[] with a unique id and z, then POST /api/save-layout',
+                'how': 'POST /api/add-layers {path, layers:[{type,…}]} — id and z are filled in when '
+                       'missing. index=0 slides a background under everything. On an open editor '
+                       'prefer /api/live/patch with add[], which the user sees at once',
                 'layer_types': list(LAYER_TYPES),
+            },
+            'new_layout': {
+                'how': 'POST /api/create-layout {path, width, height, background?, layers?} — a new '
+                       'screen or format without writing JSON by hand',
+            },
+            'another_format': {
+                'how': 'POST /api/resize-canvas {path, width, height, out?} — carries the layers '
+                       'across, scaling x/w by the width factor, y/h by the height factor, and type '
+                       'and radii by the smaller of the two. out= keeps the source untouched',
+            },
+            'measure_photo': {
+                'how': 'POST /api/measure-image {path, mode:"dark"} to find a switched-off screen in '
+                       'a photo: returns its quadrilateral (TL,TR,BR,BL), corner radius, and a warp '
+                       'block ready for a warped image layer. mode bright/alpha for other subjects',
+                'use_for': 'Placing a design inside a device mockup without measuring by hand',
+            },
+            'edit_image_file': {
+                'how': 'POST /api/image-op {path, op:crop|resize|fit|pad|rotate, …} — writes a new '
+                       'file and never touches the source. fit covers a w×h box and centre-crops',
+            },
+            'fit_text': {
+                'how': 'POST /api/measure-text {layers:[…]} before rendering: wrapped lines, widest '
+                       'line, block height and whether it overflows the box, measured with the same '
+                       'fonts the export uses',
+                'use_for': 'Choosing a font size or a box width in one step instead of exporting to look',
+            },
+            'html_to_png': {
+                'how': 'POST /api/render-html {html, width, height?, scale?, transparent?, out?} — '
+                       'the same Chromium as the export, for what is easier as markup than as layers',
+            },
+            'export_many': {
+                'how': 'POST /api/export-batch {items:[path | {path,out}]} — one browser for the whole '
+                       'set instead of one launch per file',
             },
             'slant_text': {
                 'how': 'Set skewX on the text layer. Works on any font, unlike fontStyle=italic '

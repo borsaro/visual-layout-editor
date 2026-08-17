@@ -628,6 +628,14 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/create-layout-from-image',
             '/api/export',
             '/api/patch-layers',
+            '/api/add-layers',
+            '/api/create-layout',
+            '/api/resize-canvas',
+            '/api/image-op',
+            '/api/measure-image',
+            '/api/measure-text',
+            '/api/render-html',
+            '/api/export-batch',
             '/api/save-preview',
             '/api/live/state',
             '/api/live/patch',
@@ -862,6 +870,173 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                 self._json(200, {'ok': True, 'items': results})
                 return
 
+            if parsed.path == '/api/add-layers':
+                from layout_ops import add_layers, write_layout
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                index = payload.get('index')
+                result = add_layers(layout, payload.get('layers') or [],
+                                    index=None if index is None else int(index))
+                size = write_layout(target, layout)
+                notify_file_change(target, 'layout', origin=payload.get('client'),
+                                   label=payload.get('label') or 'add_layers',
+                                   ids=[a['id'] for a in result['added']])
+                self._json(200, {'ok': True, 'path': public_path(target), 'bytes': size, **result})
+                return
+
+            if parsed.path == '/api/create-layout':
+                from layout_ops import create_layout, write_layout
+                raw = (payload.get('path') or '').strip()
+                if not raw:
+                    raise ValueError('path required (…/name.layout.json)')
+                target = resolve_allowed_any(raw)
+                if not target.name.endswith('.layout.json'):
+                    target = target.with_name(clean_layout_filename(target.name))
+                if target.exists() and not payload.get('overwrite'):
+                    raise ValueError(f'esiste già: {public_path(target)} — passa overwrite=true')
+                layout = create_layout(
+                    payload.get('width'), payload.get('height'),
+                    background=payload.get('background') or '#ffffff',
+                    layers=payload.get('layers') or [],
+                    name=payload.get('name'),
+                )
+                size = write_layout(target, layout)
+                notify_file_change(target, 'layout', origin=payload.get('client'),
+                                   label='create_layout')
+                self._json(200, {
+                    'ok': True, 'path': public_path(target), 'bytes': size,
+                    'canvas': layout['canvas'], 'layers': len(layout['layers']),
+                })
+                return
+
+            if parsed.path == '/api/resize-canvas':
+                from layout_ops import resize_canvas, write_layout
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                result = resize_canvas(layout, payload.get('width'), payload.get('height'),
+                                       scale_layers=bool(payload.get('scale_layers', True)))
+                out_raw = payload.get('out')
+                if out_raw:
+                    out_target = resolve_allowed_any(out_raw)
+                    if not out_target.name.endswith('.layout.json'):
+                        out_target = out_target.with_name(clean_layout_filename(out_target.name))
+                    if not any(under(out_target, r) for r in ALLOWED_ROOTS):
+                        raise ValueError('out outside allowed roots')
+                    target = out_target
+                size = write_layout(target, layout)
+                notify_file_change(target, 'layout', origin=payload.get('client'),
+                                   label='resize_canvas')
+                self._json(200, {'ok': True, 'path': public_path(target), 'bytes': size, **result})
+                return
+
+            if parsed.path == '/api/measure-image':
+                from image_ops import image_info, measure_region
+                src = resolve_allowed_image(payload.get('path'))
+                body = {'ok': True, 'path': public_path(src), **image_info(src)}
+                if payload.get('region', True):
+                    body['region'] = measure_region(
+                        src,
+                        mode=payload.get('mode') or 'dark',
+                        threshold=float(payload.get('threshold', 0.22)),
+                        min_area_ratio=float(payload.get('min_area_ratio', 0.01)),
+                    )
+                self._json(200, body)
+                return
+
+            if parsed.path == '/api/image-op':
+                from image_ops import edit_image
+                src = resolve_allowed_image(payload.get('path'))
+                out_raw = payload.get('out')
+                out_path = None
+                if out_raw:
+                    out_path = resolve_allowed_any(out_raw)
+                    if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                        raise ValueError('out outside allowed roots')
+                params = {k: v for k, v in payload.items()
+                          if k not in ('path', 'out', 'op', 'client', 'label')}
+                res = edit_image(src, payload.get('op'), out=out_path, **params)
+                if not any(under(res['path'], r) for r in ALLOWED_ROOTS):
+                    raise ValueError('output outside allowed roots')
+                self._json(200, {
+                    'ok': True, 'op': payload.get('op'),
+                    'path': public_path(res['path']),
+                    'width': res['width'], 'height': res['height'],
+                    'src': asset_src_for(res['path']),
+                })
+                return
+
+            if parsed.path == '/api/measure-text':
+                from export_render import measure_texts
+                layers = payload.get('layers')
+                if not isinstance(layers, list) or not layers:
+                    raise ValueError('layers[] required (text layers, as in a layout)')
+                self._json(200, {'ok': True, 'measured': measure_texts(
+                    layers, origin=f'http://127.0.0.1:{PORT}')})
+                return
+
+            if parsed.path == '/api/render-html':
+                from export_render import render_html_png
+                html = payload.get('html')
+                if not isinstance(html, str) or not html.strip():
+                    raise ValueError('html required')
+                png = render_html_png(
+                    html,
+                    width=int(payload.get('width') or 1080),
+                    height=payload.get('height') and int(payload['height']),
+                    scale=float(payload.get('scale') or 1),
+                    origin=f'http://127.0.0.1:{PORT}',
+                    transparent=bool(payload.get('transparent')),
+                )
+                out_raw = payload.get('out')
+                if out_raw:
+                    out_path = resolve_allowed_any(out_raw)
+                    if out_path.suffix.lower() != '.png':
+                        out_path = out_path.with_suffix('.png')
+                    if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                        raise ValueError('out outside allowed roots')
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_bytes(png)
+                    self._json(200, {'ok': True, 'path': public_path(out_path), 'bytes': len(png)})
+                    return
+                self._json(200, {'ok': True, 'bytes': len(png),
+                                 'png_base64': base64.b64encode(png).decode('ascii')})
+                return
+
+            if parsed.path == '/api/export-batch':
+                from export_render import render_layouts_png
+                items = payload.get('items') or payload.get('paths') or []
+                if not isinstance(items, list) or not items:
+                    raise ValueError('items[] required: paths, or {path, out} objects')
+                jobs = []
+                for entry in items:
+                    raw = entry if isinstance(entry, str) else (entry or {}).get('path')
+                    src = resolve_allowed_layout(raw)
+                    out_raw = None if isinstance(entry, str) else (entry or {}).get('out')
+                    if out_raw:
+                        out_path = resolve_allowed_any(out_raw)
+                        if out_path.suffix.lower() != '.png':
+                            out_path = out_path.with_suffix('.png')
+                    else:
+                        out_path = (src.parent / 'exports' / (src.name.replace('.layout.json', '') + '.png')).resolve()
+                    if not any(under(out_path, r) for r in ALLOWED_ROOTS):
+                        raise ValueError(f'out outside allowed roots: {out_raw}')
+                    jobs.append((src, out_path, json.loads(src.read_text(encoding='utf-8'))))
+                # One browser for the whole batch: the launch is most of the cost.
+                pngs = render_layouts_png([j[2] for j in jobs], origin=f'http://127.0.0.1:{PORT}')
+                written = []
+                for (src, out_path, _), png in zip(jobs, pngs):
+                    if not png:
+                        written.append({'path': public_path(src), 'ok': False, 'error': 'render vuoto'})
+                        continue
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_bytes(png)
+                    written.append({'path': public_path(src), 'ok': True,
+                                    'out': public_path(out_path), 'bytes': len(png)})
+                self._json(200, {'ok': all(w['ok'] for w in written),
+                                 'count': sum(1 for w in written if w['ok']),
+                                 'items': written})
+                return
+
             if parsed.path == '/api/patch-layers':
                 target = resolve_allowed_layout(payload.get('path'))
                 layout = json.loads(target.read_text(encoding='utf-8'))
@@ -961,7 +1136,21 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                                label=payload.get('label') or 'save-layout')
             self._json(200, {'ok': True, 'path': public_path(target), 'bytes': target.stat().st_size})
         except Exception as e:
-            self._json(400, {'ok': False, 'error': str(e)})
+            # "400" with a bare message is what sent people back to their own scripts:
+            # say which endpoint refused, what it was handed and where the allowed roots
+            # are, so the same payload can be fixed on the first retry.
+            detail = {
+                'ok': False,
+                'error': str(e) or e.__class__.__name__,
+                'error_type': e.__class__.__name__,
+                'endpoint': parsed.path,
+            }
+            if isinstance(payload, dict):
+                detail['received_keys'] = sorted(payload.keys())
+                if payload.get('path'):
+                    detail['path'] = payload.get('path')
+            detail['allowed_roots'] = [str(r) for r in ALLOWED_ROOTS]
+            self._json(400, detail)
 
 
 os.chdir(ROOT)

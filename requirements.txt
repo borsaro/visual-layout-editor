@@ -1,4 +1,7 @@
 # Runtime Python for Docker / local server
 playwright>=1.40.0
+# Pixel measuring and image edits (measure_image, edit_image)
+pillow>=10.0.0
+numpy>=1.26.0
 # Background removal (BiRefNet family via rembg, CPU ONNX runtime)
 rembg[cpu]>=2.0.67

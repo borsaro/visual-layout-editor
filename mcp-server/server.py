@@ -166,6 +166,184 @@ async def patch_layout_file(path: str, patches: list[dict], return_layout: bool 
 
 
 @mcp.tool()
+async def add_layers(
+    path: str,
+    layers: list[dict],
+    index: int | None = None,
+) -> dict:
+    """Append layers to a .layout.json on disk. Works with no editor open.
+
+    The counterpart of patch_layout_file, which only reaches layers that already exist.
+    Each layer needs at least "type" (text, rect, image, gradient, shape) plus x, y, w, h;
+    id and z are filled in when missing (the id comes from the layer's name, so it stays
+    readable and stable for later patches).
+
+    index inserts into the stack instead of on top — index=0 puts a background under
+    everything already there.
+
+    If that layout is open in the editor, prefer add_live_layers: the user sees it at once.
+    """
+    payload: dict = {'path': path, 'layers': layers}
+    if index is not None:
+        payload['index'] = index
+    return await _post('/api/add-layers', payload)
+
+
+@mcp.tool()
+async def create_layout(
+    path: str,
+    width: int,
+    height: int,
+    background: str = '#ffffff',
+    layers: list[dict] | None = None,
+    overwrite: bool = False,
+) -> dict:
+    """Create a new .layout.json from nothing: canvas size, background, optional layers.
+
+    path is where to write it (…/name.layout.json, campaign-relative or ./examples/…).
+    This is the tool for a new screen or a new format — writing the JSON by hand is
+    what it replaces.
+    """
+    return await _post('/api/create-layout', {
+        'path': path, 'width': width, 'height': height,
+        'background': background, 'layers': layers or [], 'overwrite': overwrite,
+    })
+
+
+@mcp.tool()
+async def resize_canvas(
+    path: str,
+    width: int,
+    height: int,
+    scale_layers: bool = True,
+    out: str | None = None,
+) -> dict:
+    """Move a layout onto another canvas, carrying its layers along.
+
+    The 1350 -> 1080 pass, done properly: x/w follow the width factor, y/h the height
+    factor, while type, radii and effect blurs follow the smaller of the two, which is
+    what keeps a rescaled design from looking stretched.
+
+    out writes a new file and leaves the source alone (the usual "same ad, square
+    format" move). scale_layers=False changes the canvas only.
+    """
+    payload: dict = {'path': path, 'width': width, 'height': height, 'scale_layers': scale_layers}
+    if out:
+        payload['out'] = out
+    return await _post('/api/resize-canvas', payload)
+
+
+@mcp.tool()
+async def measure_image(
+    path: str,
+    mode: str = 'dark',
+    threshold: float = 0.22,
+    region: bool = True,
+) -> dict:
+    """Read an image's pixels: its size, and where a region of interest sits in it.
+
+    mode='dark' finds the largest dark blob — a switched-off phone screen in a
+    photograph, which is the measurement a mockup needs. 'bright' inverts it, 'alpha'
+    uses the transparency of a cutout instead.
+
+    Returns the bounding box, the four corners as a quadrilateral (TL, TR, BR, BL),
+    the corner radius in pixels, and a ready-made `warp` block: x/y/w/h plus normalised
+    warpPoints to drop straight into a warped image layer. All numbers are in the
+    coordinates of the file on disk.
+
+    region=False skips the search and returns size and format only.
+    """
+    return await _post('/api/measure-image', {
+        'path': path, 'mode': mode, 'threshold': threshold, 'region': region,
+    })
+
+
+@mcp.tool()
+async def edit_image(
+    path: str,
+    op: str,
+    out: str | None = None,
+    x: int | None = None,
+    y: int | None = None,
+    w: int | None = None,
+    h: int | None = None,
+    degrees: float | None = None,
+) -> dict:
+    """Crop, resize, fit, pad or rotate an image file. The source is never modified.
+
+    op='crop' needs x, y, w, h. op='resize' takes w and/or h (the missing one keeps the
+    aspect). op='fit' covers a w x h box and centre-crops the overflow — "make this photo
+    fill 1080x1350". op='pad' fits inside the box instead, on a transparent ground.
+    op='rotate' takes degrees (clockwise) and grows the canvas to keep the corners.
+
+    Without out, the result is written beside the source as <name>-<op>.<ext>. The
+    reply carries the new size and an `src` ready to paste into an image layer.
+    """
+    payload: dict = {'path': path, 'op': op}
+    for key, value in (('out', out), ('x', x), ('y', y), ('w', w), ('h', h), ('degrees', degrees)):
+        if value is not None:
+            payload[key] = value
+    return await _post('/api/image-op', payload)
+
+
+@mcp.tool()
+async def measure_text(layers: list[dict]) -> dict:
+    """Measure text layers the way the editor will draw them, before rendering anything.
+
+    Pass text layers as they appear in a layout (text, fontFamily, fontSize, fontWeight,
+    lineHeight, letterSpacing, w, h). Returns, per layer: the wrapped lines, how many,
+    the widest line in px, the total block height, and whether it overflows its box.
+
+    Use it to pick a font size or a box width in one step instead of exporting and
+    looking. Fonts are the same ones the export loads, so the numbers match the render.
+    """
+    return await _post('/api/measure-text', {'layers': layers})
+
+
+@mcp.tool()
+async def render_html(
+    html: str,
+    width: int = 1080,
+    height: int | None = None,
+    scale: float = 1.0,
+    transparent: bool = False,
+    out: str | None = None,
+) -> dict:
+    """Rasterise arbitrary HTML to PNG with the same Chromium the export uses.
+
+    For anything that is easier written as markup than as layers — a feed mockup, a
+    chat bubble, a table. height=None shoots the full document height; scale is the
+    device pixel ratio (2 for a retina-sharp shot); transparent drops the background.
+
+    out writes the PNG and returns its path, otherwise the PNG comes back as base64.
+    """
+    payload: dict = {'html': html, 'width': width, 'scale': scale, 'transparent': transparent}
+    if height:
+        payload['height'] = height
+    if out:
+        payload['out'] = out
+    return await _post('/api/render-html', payload)
+
+
+@mcp.tool()
+async def export_png_batch(items: list, timeout: float | None = None) -> dict:
+    """Export many layouts in one call, sharing a single browser.
+
+    items is a list of paths, or of {"path": …, "out": …} when the destination matters.
+    Without out, each PNG lands in exports/ beside its layout. Fourteen exports used to
+    be fourteen Chromium launches; this is one.
+    """
+    # A batch is as slow as the sum of its renders: the global timeout is for single calls.
+    limit = float(timeout or os.environ.get('ROBY_EXPORT_BATCH_TIMEOUT', '600'))
+    async with httpx.AsyncClient(timeout=limit) as client:
+        res = await client.post(f'{EDITOR_URL}/api/export-batch', json={'items': items})
+        try:
+            return res.json()
+        except json.JSONDecodeError:
+            return {'ok': False, 'error': f'HTTP {res.status_code}: {res.text[:200]}'}
+
+
+@mcp.tool()
 async def export_png(path: str, out: str | None = None) -> dict:
     """Render a layout to PNG server-side via Playwright.
 
