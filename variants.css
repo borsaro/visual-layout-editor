@@ -155,3 +155,10 @@
 
 /* Thumbnail drawn in the page because the variant is not on disk yet. */
 .variantThumb.isLocalThumb { outline: 1px dashed #3f4a63; outline-offset: -1px; }
+
+/* Reordering: drag a card to move it in the set. */
+.variantCard.isDragging { opacity: .45; }
+.variantCard.dropBefore { box-shadow: inset 3px 0 0 0 var(--accent); }
+.variantCard.dropAfter { box-shadow: inset -3px 0 0 0 var(--accent); }
+.variantCard:not(.isBaseCard) { cursor: grab; }
+.variantCard.isDragging { cursor: grabbing; }

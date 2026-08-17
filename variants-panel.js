@@ -20,7 +20,21 @@ const VARIANTS_STATE = {
   newIds: new Set(),   // created here, not on disk yet: always pending until saved
   checked: new Set(),  // ticked for bulk delete; independent of what is on canvas
   anchorId: null,      // last plainly-clicked card, for shift+click ranges
+  dragId: null,        // card being dragged to a new position in the strip
+  // Thumbnails are rewritten in place, on URLs that never change: without a version to
+  // bust it, the browser keeps showing the picture it already has and a saved edit looks
+  // like it never happened.
+  thumbsVersion: 0,
 };
+
+function variantThumbUrl(path, id) {
+  return `/api/variant-thumb?path=${encodeURIComponent(path)}&id=${encodeURIComponent(id)}`
+    + `&v=${VARIANTS_STATE.thumbsVersion}`;
+}
+
+function baseThumbUrl(path) {
+  return `/api/layout-preview?path=${encodeURIComponent(path)}&v=${VARIANTS_STATE.thumbsVersion}`;
+}
 
 /**
  * The base is shown as the first card of the strip, so the strip reads as the whole
@@ -175,7 +189,10 @@ async function loadVariants({ quiet = true } = {}) {
     const unsaved = (VARIANTS_STATE.payload?.variants || [])
       .filter((v) => VARIANTS_STATE.newIds.has(v.id) && !onDisk.some((d) => d.id === v.id));
     VARIANTS_STATE.payload = unsaved.length ? { ...data, variants: [...onDisk, ...unsaved] } : data;
-    if (VARIANTS_STATE.activeId && !(data.variants || []).some((v) => v.id === VARIANTS_STATE.activeId)) {
+    // Checked against the merged set, not the disk one: a variant created a moment ago
+    // is on the canvas and must stay selected.
+    if (VARIANTS_STATE.activeId
+        && !(VARIANTS_STATE.payload.variants || []).some((v) => v.id === VARIANTS_STATE.activeId)) {
       VARIANTS_STATE.activeId = null;
     }
   } catch (e) {
@@ -276,7 +293,7 @@ function baseVariantCard() {
     const img = document.createElement('img');
     img.className = 'variantThumb';
     img.alt = 'Base';
-    img.src = '/api/layout-preview?path=' + encodeURIComponent(path);
+    img.src = baseThumbUrl(path);
     img.onerror = () => {
       // Same as for an unsaved variant: a layout with no preview sidecar yet still has
       // a picture — the one on the canvas.
@@ -350,7 +367,7 @@ function variantCard(variant) {
   const img = document.createElement('img');
   img.className = 'variantThumb';
   img.alt = variant.label || variant.id;
-  img.src = `/api/variant-thumb?path=${encodeURIComponent(path)}&id=${encodeURIComponent(variant.id)}`;
+  img.src = variantThumbUrl(path, variant.id);
   img.onerror = () => {
     // Nothing on disk yet — a variant created a second ago, or one whose source has
     // never been saved either. An empty card reads as "the duplicate came out blank",
@@ -389,7 +406,98 @@ function variantCard(variant) {
     if (variantsMarqueeJustFinished()) return;
     selectVariant(variant.id, ev);
   });
+  bindVariantCardDrag(card, variant.id);
   return card;
+}
+
+/* -------------------------------------------------------------- reordering */
+
+/**
+ * Drag a card to move it in the strip. The order is the order of the set on disk, so
+ * it is what the gallery, the exports and anyone reading the file will see.
+ *
+ * The rubber band starts on cards too, and both gestures begin with a press on the
+ * same pixel: the band bails out as soon as a native drag takes over.
+ */
+function bindVariantCardDrag(card, id) {
+  card.draggable = true;
+  card.addEventListener('dragstart', (ev) => {
+    ev.dataTransfer.setData('text/variant-id', id);
+    ev.dataTransfer.effectAllowed = 'move';
+    card.classList.add('isDragging');
+    VARIANTS_STATE.dragId = id;
+    VARIANTS_MARQUEE.active = false;
+    VARIANTS_MARQUEE.box?.remove();
+    VARIANTS_MARQUEE.box = null;
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('isDragging');
+    clearVariantDropMarks();
+    VARIANTS_STATE.dragId = null;
+  });
+  card.addEventListener('dragover', (ev) => {
+    if (!VARIANTS_STATE.dragId || VARIANTS_STATE.dragId === id) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    const rect = card.getBoundingClientRect();
+    const before = ev.clientX < rect.left + rect.width / 2;
+    clearVariantDropMarks();
+    card.classList.add(before ? 'dropBefore' : 'dropAfter');
+  });
+  card.addEventListener('dragleave', (ev) => {
+    if (!card.contains(ev.relatedTarget)) card.classList.remove('dropBefore', 'dropAfter');
+  });
+  card.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const from = ev.dataTransfer.getData('text/variant-id') || VARIANTS_STATE.dragId;
+    const rect = card.getBoundingClientRect();
+    const before = ev.clientX < rect.left + rect.width / 2;
+    clearVariantDropMarks();
+    reorderVariant(from, id, before);
+  });
+}
+
+function clearVariantDropMarks() {
+  document.querySelectorAll('.variantCard.dropBefore, .variantCard.dropAfter')
+    .forEach((el) => el.classList.remove('dropBefore', 'dropAfter'));
+}
+
+function reorderVariant(fromId, targetId, placeBefore) {
+  const variants = VARIANTS_STATE.payload?.variants;
+  if (!variants || fromId === targetId) return;
+  const from = variants.findIndex((v) => v.id === fromId);
+  if (from < 0) return;
+  const [moved] = variants.splice(from, 1);
+  let to = variants.findIndex((v) => v.id === targetId);
+  if (to < 0) { variants.splice(from, 0, moved); return; }
+  variants.splice(placeBefore ? to : to + 1, 0, moved);
+  renderVariantsBar();
+  persistVariantOrder();
+}
+
+/**
+ * Write the new order straight away when there is nothing else pending, so it survives
+ * a reload without asking for a save. With drafts around, the order rides along with
+ * the next "Salva Json" instead — writing now would persist half-finished work.
+ */
+async function persistVariantOrder() {
+  if (variantsHaveUnsavedWork() || !state.currentLayoutPath) {
+    showToast('Ordine cambiato — sarà scritto con "Salva Json"');
+    return;
+  }
+  try {
+    const variants = (VARIANTS_STATE.payload?.variants || []).map((v) => ({
+      id: v.id, label: v.label, note: v.note, axes: v.axes,
+      promoted: v.promoted, from: v.from ?? null, ops: effectiveOpsOf(v.id),
+    }));
+    // thumbnails=false: the pictures are unchanged, and rendering them all again would
+    // stall the strip for seconds on every drag.
+    const data = await writeVariants(variants, { thumbnails: false });
+    VARIANTS_STATE.payload = data;
+    renderVariantsBar();
+  } catch (e) {
+    showToast('Ordine non salvato: ' + (e.message || e));
+  }
 }
 
 /* ------------------------------------------------------------ box selection */
@@ -630,6 +738,9 @@ async function variantsAfterBaseSave() {
     const data = await writeVariants(variants);
     VARIANTS_STATE.payload = data;
   }
+  // The save rewrote every thumbnail and the layout preview: point the cards at the new
+  // pictures instead of the ones the browser already holds for those URLs.
+  VARIANTS_STATE.thumbsVersion += 1;
   VARIANTS_STATE.baseLayers = JSON.parse(JSON.stringify(currentBaseLayers()));
   VARIANTS_STATE.draftBase = null;
   VARIANTS_STATE.draftOps.clear();

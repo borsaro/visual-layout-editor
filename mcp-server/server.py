@@ -24,7 +24,14 @@ mcp = MCPServer(
         '(the open .layout.json) on live tools so you only touch that design; other open '
         'editors stay isolated. Call get_live_state() first; if several sessions are listed, '
         'pick one by path or client. Call get_capabilities() once to learn the layer types '
-        'and their fields.'
+        'and their fields.\n\n'
+        'SEVERAL VERSIONS OF ONE AD ARE VARIANTS, NOT SEPARATE FILES. When asked for N '
+        'versions, options, alternatives or A/B tests of the same design, build one layout '
+        'and call save_variants with one entry per version: they show up in the editor\'s '
+        'variants strip, the user browses them side by side, and the base stays the single '
+        'source of truth, so a later fix to the base reaches all of them. Copying the '
+        '.layout.json N times instead makes N designs that drift apart. Use create_layout '
+        'for a genuinely different piece: another format, another screen, another campaign.'
     ),
 )
 
@@ -203,6 +210,9 @@ async def create_layout(
     path is where to write it (…/name.layout.json, campaign-relative or ./examples/…).
     This is the tool for a new screen or a new format — writing the JSON by hand is
     what it replaces.
+
+    NOT the tool for another version of the same ad: for that use save_variants, so the
+    versions stay one project with one base instead of N files that drift apart.
     """
     return await _post('/api/create-layout', {
         'path': path, 'width': width, 'height': height,
@@ -375,6 +385,9 @@ async def save_variants(
     thumbnails: bool = True,
 ) -> dict:
     """Save alternative versions of one layout, browsable from the editor's variants bar.
+
+    THE tool for "make me N versions of this ad": one entry per version, all sharing the
+    base. Order matters — the list order is the order of the strip and of the exports.
 
     A variant is NOT a copy of the layout: it is the ops to apply on top of it, in the
     same shape patch_live_layers already uses. Ten variants cost a couple of KB and the

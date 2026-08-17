@@ -355,6 +355,14 @@ def health_payload(campaigns_root: str, editor_root: str, export_ready: bool, ex
                        'prefer /api/live/patch with add[], which the user sees at once',
                 'layer_types': list(LAYER_TYPES),
             },
+            'several_versions_of_one_ad': {
+                'how': 'POST /api/variants {path, variants:[{id,label,axes,ops}]} — one entry per '
+                       'version, all sharing the base. They appear in the editor\'s variants strip '
+                       'and can be browsed side by side',
+                'not': 'Copying the .layout.json N times: that makes N designs that drift apart, '
+                       'and a later fix to the base reaches none of them',
+                'order': 'The order of variants[] is the order of the strip and of the exports',
+            },
             'new_layout': {
                 'how': 'POST /api/create-layout {path, width, height, background?, layers?} — a new '
                        'screen or format without writing JSON by hand',

@@ -1155,7 +1155,12 @@ async function saveJsonOverwrite(){
       ? ` · ${summary.savedVariants} variant${summary.savedVariants > 1 ? 'i' : 'e'}`
       : '';
     showToast('Progetto salvato: ' + data.path + extra);
-    uploadCurrentLayoutPreview?.();
+    // The strip's base card reads this file: refresh the cards once it is actually
+    // written, or they would reload the picture from before the save.
+    uploadCurrentLayoutPreview?.().then(() => {
+      if (typeof VARIANTS_STATE === 'object') VARIANTS_STATE.thumbsVersion += 1;
+      renderVariantsBar?.();
+    });
     return;
   }
   // 2) File aperto con Carica JSON (File System Access handle)

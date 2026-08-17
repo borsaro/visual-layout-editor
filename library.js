@@ -1392,7 +1392,14 @@ async function renderLayoutPreviewCanvas(layout){
 async function uploadCurrentLayoutPreview(){
   if(!state.currentLayoutPath) return;
   try{
-    const c = await renderLayoutPreviewCanvas(layoutPayload());
+    // The sidecar is the picture OF THE LAYOUT, and the canvas may be showing a
+    // variant: rendering what is on screen filed a variant as the base, in the
+    // library and on the base card of the variants strip alike.
+    const payload = layoutPayload();
+    const baseLayers = typeof currentBaseLayers === 'function' ? currentBaseLayers() : null;
+    const c = await renderLayoutPreviewCanvas(
+      baseLayers ? { ...payload, layers: baseLayers } : payload,
+    );
     await persistLayoutPreview(state.currentLayoutPath, c);
   } catch(e){ /* non-blocking */ }
 }
