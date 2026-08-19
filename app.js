@@ -23,6 +23,10 @@ const state = {
   warpModeTemp: false, // Option/Alt held: distort until the key is released
   campaignsRoot: '',
   editorRoot: '',
+  // Working set: the files picked in the library, walked one at a time with the arrows
+  // in the toolbar. Entries are library items, so an image without a layout still opens
+  // the way it does from the gallery.
+  editQueue: null,      // { entries: [...], index: 0 }
 };
 window.state = state;
 let drag = null;
@@ -1880,6 +1884,13 @@ function bindKeyboardShortcuts(){
       $('deleteBtn')?.click();
       return;
     }
+    // Alt+arrows walk the working set. Bare arrows nudge layers, so the modifier is
+    // what keeps the two apart.
+    if(ev.altKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && state.editQueue){
+      ev.preventDefault();
+      stepEditQueue(ev.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
     if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(ev.key) && state.selectedIds.length){
       if(typeof isLibraryModalOpen === 'function' && isLibraryModalOpen()) return;
       ev.preventDefault();
@@ -2005,6 +2016,7 @@ function init(){
   $('closeLibraryBtn').onclick=closeLayoutLibrary;
   $('refreshLibraryBtn').onclick=()=>refreshLayoutLibrary().catch(e=>alert('Errore aggiornamento libreria: '+e.message));
   $('libraryViewToggleBtn')?.addEventListener('click', ()=>setLibraryViewMode(state.libraryViewMode === 'list' ? 'grid' : 'list'));
+  $('bulkEditBtn')?.addEventListener('click', ()=>startEditQueue(selectedLibraryEntries()));
   $('bulkExportBtn').onclick=exportSelectedLayouts;
   $('bulkDeleteBtn')?.addEventListener('click', ()=>deleteSelectedLibraryItems());
   $('bulkCopyPathsBtn')?.addEventListener('click', ()=>copySelectedLibraryPaths());
@@ -2082,6 +2094,7 @@ function init(){
   if(typeof initLiveBridge === 'function') initLiveBridge();
   bindProps(); bindKeyboardShortcuts(); syncCanvasInputs();
   bindVariantsBar?.();
+  bindEditQueue?.();
   loadServerHealth().finally(()=>{
     render();
     // After health: the patchable-field set it carries decides how variants apply.

@@ -589,6 +589,12 @@ function updateBulkActionButtons(){
     exportBtn.disabled = layoutCount === 0;
     exportBtn.textContent = layoutCount ? `Export selezionati (${layoutCount})` : 'Export selezionati';
   }
+  const editBtn = $('bulkEditBtn');
+  if(editBtn){
+    const fileCount = selectedLibraryEntries().filter(it => it.kind !== 'folder').length;
+    editBtn.disabled = fileCount === 0;
+    editBtn.textContent = fileCount ? `Apri in editing (${fileCount})` : 'Apri in editing';
+  }
   const delBtn = $('bulkDeleteBtn');
   if(delBtn){
     delBtn.disabled = count === 0;
@@ -1492,4 +1498,117 @@ async function loadReadyLayouts(){ /* library loads only when modal opens */ }
 
 bindLibraryKeyboard();
 bindLibraryBackdrop();
+/* ------------------------------------------------------- working set (edit queue) */
+
+/**
+ * A list of files picked in the library, walked one at a time from the toolbar.
+ *
+ * Entries are library items, not bare paths: an image without a layout has to open the
+ * way it does from the gallery, which means creating its sidecar layout on the spot.
+ * The queue survives a reload — a review pass over twenty ads should not be lost to an
+ * accidental refresh — and drops entries that no longer exist when it is restored.
+ */
+const EDIT_QUEUE_KEY = 'robyEditQueue';
+
+function editQueueEntryLabel(entry){
+  return entry?.name || (entry?.path || '').split('/').pop() || 'file';
+}
+
+function saveEditQueue(){
+  try{
+    if(!state.editQueue) localStorage.removeItem(EDIT_QUEUE_KEY);
+    else localStorage.setItem(EDIT_QUEUE_KEY, JSON.stringify(state.editQueue));
+  }catch(_){ /* private mode: the queue just does not survive the reload */ }
+}
+
+function restoreEditQueue(){
+  try{
+    const raw = localStorage.getItem(EDIT_QUEUE_KEY);
+    if(!raw) return;
+    const queue = JSON.parse(raw);
+    if(!queue?.entries?.length) return;
+    state.editQueue = queue;
+    syncEditQueueUi();
+  }catch(_){ /* unreadable: start without a queue */ }
+}
+
+function startEditQueue(entries){
+  const files = (entries || []).filter(it => it && it.kind !== 'folder' && librarySelectPath(it));
+  if(!files.length){ showToast('Seleziona dei file, non solo cartelle'); return; }
+  state.editQueue = {
+    entries: files.map(it => ({
+      kind: it.kind, path: it.path, name: it.name,
+      has_layout: !!it.has_layout, layout_path: it.layout_path || null,
+    })),
+    index: 0,
+  };
+  saveEditQueue();
+  openEditQueueAt(0, { fromStart: true });
+}
+
+function clearEditQueue({ quiet = false } = {}){
+  state.editQueue = null;
+  saveEditQueue();
+  syncEditQueueUi();
+  if(!quiet) showToast('Lista chiusa — il file aperto resta com’è');
+}
+
+/** Move by ±1, or to an absolute position. Unsaved work is confirmed before leaving. */
+async function openEditQueueAt(index, { fromStart = false } = {}){
+  const queue = state.editQueue;
+  if(!queue?.entries?.length) return;
+  const target = Math.max(0, Math.min(index, queue.entries.length - 1));
+  const entry = queue.entries[target];
+  try{
+    await openLibraryItem(entry);
+    queue.index = target;
+    saveEditQueue();
+    syncEditQueueUi();
+    if(fromStart){
+      closeLayoutLibrary();
+      showToast(`${queue.entries.length} file in lista — usa le frecce nella barra o Alt+←/→`);
+    }
+  }catch(e){
+    // "Apertura annullata" is the user answering no to the unsaved-changes prompt: the
+    // queue must stay exactly where it was, without an error on top of their decision.
+    if(String(e?.message || e).includes('annullata')) return;
+    showToast('Apertura fallita: ' + (e.message || e));
+  }
+}
+
+function stepEditQueue(delta){
+  const queue = state.editQueue;
+  if(!queue?.entries?.length) return;
+  const next = queue.index + delta;
+  if(next < 0 || next >= queue.entries.length){
+    showToast(delta < 0 ? 'Primo file della lista' : 'Ultimo file della lista');
+    return;
+  }
+  openEditQueueAt(next);
+}
+
+function syncEditQueueUi(){
+  const nav = $('editQueueNav');
+  if(!nav) return;
+  const queue = state.editQueue;
+  nav.hidden = !queue?.entries?.length;
+  if(nav.hidden) return;
+  const label = $('editQueueLabel');
+  if(label){
+    label.textContent = `${queue.index + 1}/${queue.entries.length} · ${editQueueEntryLabel(queue.entries[queue.index])}`;
+    label.title = queue.entries.map((e, i) => `${i + 1}. ${editQueueEntryLabel(e)}`).join('\n');
+  }
+  const prev = $('editQueuePrev');
+  const next = $('editQueueNext');
+  if(prev) prev.disabled = queue.index <= 0;
+  if(next) next.disabled = queue.index >= queue.entries.length - 1;
+}
+
+function bindEditQueue(){
+  $('editQueuePrev')?.addEventListener('click', () => stepEditQueue(-1));
+  $('editQueueNext')?.addEventListener('click', () => stepEditQueue(1));
+  $('editQueueClose')?.addEventListener('click', () => clearEditQueue());
+  restoreEditQueue();
+}
+
 if(!window.ROBY_EXPORT_MODE) init();

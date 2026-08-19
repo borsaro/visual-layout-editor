@@ -100,6 +100,12 @@
     <section class="stageWrap">
       <div class="stageToolbar">
         <label>Zoom <input id="zoomRange" type="range" min="15" max="400" step="0.5" value="100"><span id="zoomLabel">100%</span></label>
+        <span id="editQueueNav" class="editQueueNav" hidden>
+          <button type="button" id="editQueuePrev" title="File precedente della selezione (Alt+←)">‹</button>
+          <span id="editQueueLabel" class="editQueueLabel"></span>
+          <button type="button" id="editQueueNext" title="File successivo della selezione (Alt+→)">›</button>
+          <button type="button" id="editQueueClose" class="editQueueClose" title="Esci dalla lista">✕</button>
+        </span>
         <button type="button" id="warpModeBtn" class="toolbarToggle" aria-pressed="false" title="Distorsione angoli — trascina i 4 angoli in modo indipendente (o tieni premuto Option)">Distorsione</button>
         <button type="button" id="marqueeModeBtn" class="toolbarToggle" aria-pressed="false" title="Selezione a rettangolo — trascina per selezionare più layer anche partendo sopra un layer (Shift aggiunge)">Selezione</button>
         <button type="button" id="cropModeBtn" class="toolbarToggle" aria-pressed="false" title="Ritaglio immagine con le maniglie — naturale: proporzionale · Cmd: rettangolo libero · Alt: vertici indipendenti">Ritaglio</button>
@@ -483,6 +489,7 @@
             <span id="librarySelectAllText">Seleziona tutto</span>
           </label>
           <button id="libraryViewToggleBtn" title="Alterna vista lista / griglia">Vista griglia</button>
+          <button id="bulkEditBtn" class="primary" disabled title="Apre il primo file selezionato e mette gli altri in coda: le frecce nella barra sopra il canvas scorrono la lista">Apri in editing</button>
           <button id="bulkExportBtn" class="primary" disabled>Export selezionati</button>
           <button id="bulkDeleteBtn" class="danger" disabled>Cancella selezionati</button>
           <button id="bulkCopyPathsBtn" disabled title="Copia i percorsi dei selezionati, uno per riga, per incollarli in chat">Copia</button>
