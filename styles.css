@@ -170,4 +170,3 @@
 .editQueueNav button:hover:not(:disabled){background:#2b303c}
 .editQueueNav button:disabled{opacity:.35;cursor:default}
 .editQueueLabel{font-size:11px;color:#cbd5e1;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.editQueueNav .editQueueClose{color:var(--muted);font-size:11px}

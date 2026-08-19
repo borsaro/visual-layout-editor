@@ -1286,6 +1286,10 @@ function buildLibraryCard(item){
 }
 
 async function openLibraryItem(item){
+  // Opening one file from the library ends the working set: picking something by hand
+  // is the way out of the list, so there is nothing to close by hand. The arrows go
+  // through here too, which is what the flag keeps apart.
+  if(!editQueueNavigating) clearEditQueue();
   if(item.kind === 'image'){
     if(item.has_layout && item.layout_path) return loadLayoutUrl(item.layout_path);
     const res = await fetch('/api/create-layout-from-image', {
@@ -1510,6 +1514,9 @@ bindLibraryBackdrop();
  */
 const EDIT_QUEUE_KEY = 'robyEditQueue';
 
+/** True only while the arrows are moving through the list — see openLibraryItem. */
+let editQueueNavigating = false;
+
 function editQueueEntryLabel(entry){
   return entry?.name || (entry?.path || '').split('/').pop() || 'file';
 }
@@ -1546,11 +1553,11 @@ function startEditQueue(entries){
   openEditQueueAt(0, { fromStart: true });
 }
 
-function clearEditQueue({ quiet = false } = {}){
+function clearEditQueue(){
+  if(!state.editQueue) return;
   state.editQueue = null;
   saveEditQueue();
   syncEditQueueUi();
-  if(!quiet) showToast('Lista chiusa — il file aperto resta com’è');
 }
 
 /** Move by ±1, or to an absolute position. Unsaved work is confirmed before leaving. */
@@ -1560,6 +1567,7 @@ async function openEditQueueAt(index, { fromStart = false } = {}){
   const target = Math.max(0, Math.min(index, queue.entries.length - 1));
   const entry = queue.entries[target];
   try{
+    editQueueNavigating = true;
     await openLibraryItem(entry);
     queue.index = target;
     saveEditQueue();
@@ -1573,6 +1581,8 @@ async function openEditQueueAt(index, { fromStart = false } = {}){
     // queue must stay exactly where it was, without an error on top of their decision.
     if(String(e?.message || e).includes('annullata')) return;
     showToast('Apertura fallita: ' + (e.message || e));
+  }finally{
+    editQueueNavigating = false;
   }
 }
 
@@ -1607,7 +1617,6 @@ function syncEditQueueUi(){
 function bindEditQueue(){
   $('editQueuePrev')?.addEventListener('click', () => stepEditQueue(-1));
   $('editQueueNext')?.addEventListener('click', () => stepEditQueue(1));
-  $('editQueueClose')?.addEventListener('click', () => clearEditQueue());
   restoreEditQueue();
 }
 
