@@ -165,8 +165,10 @@
 }
 
 /* Working set: walk the files picked in the library without going back to it. */
-.editQueueNav{display:inline-flex;align-items:center;gap:4px;background:#0f1116;border:1px solid var(--line);border-radius:999px;padding:2px 4px}
-.editQueueNav button{padding:2px 8px;font-size:13px;line-height:1.2;border-radius:999px;background:transparent;border:0;color:#e5e7eb}
-.editQueueNav button:hover:not(:disabled){background:#2b303c}
+.editQueueNav{display:inline-flex;align-items:center;gap:6px;background:#0f1116;border:1px solid var(--line);border-radius:10px;padding:3px}
+.editQueueNav button{flex:0 0 30px;width:30px;height:30px;padding:0;font-size:18px;line-height:1;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:#e5e7eb}
+.editQueueNav button:hover:not(:disabled){background:#2b303c;border-color:var(--blue)}
 .editQueueNav button:disabled{opacity:.35;cursor:default}
-.editQueueLabel{font-size:11px;color:#cbd5e1;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Fixed width, not max-width: the arrows must sit still while the name under them
+   changes length, or every step nudges the button out from under the pointer. */
+.editQueueLabel{flex:0 0 190px;width:190px;text-align:center;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
