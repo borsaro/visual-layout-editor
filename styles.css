@@ -177,3 +177,11 @@
    this line grows when a layer is selected, and a second row appearing under the
    cursor shifts the canvas down mid-click. It takes the leftover room and truncates. */
 #canvasInfo{flex:1 1 140px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Variant count on gallery entries: top-right of the name row, 0 included — an empty
+   badge is an answer, a missing one leaves you wondering whether it was read at all. */
+.layoutNameRow{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.layoutNameRow strong{min-width:0}
+.variantCountBadge{flex:0 0 auto;display:inline-flex;align-items:center;font-size:10px;line-height:1;white-space:nowrap;padding:3px 7px;border-radius:999px;background:rgba(79,140,255,.16);border:1px solid #33405c;color:#aecbfa}
+.variantCountBadge.isEmpty{background:#14171d;border-color:var(--line);color:var(--muted)}
+.libraryRowTitle .variantCountBadge{align-self:flex-start;margin-top:2px}

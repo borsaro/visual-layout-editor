@@ -1088,6 +1088,20 @@ function buildCanvasSizeBadge(item, cls){
   return el;
 }
 
+/** How many variants sit beside a layout — 0 included, so the card always answers. */
+function buildVariantCountBadge(item){
+  if(!item || item.kind === 'folder') return null;
+  if(item.kind === 'image' && !item.has_layout) return null;
+  const n = Number(item.variants) || 0;
+  const el = document.createElement('span');
+  el.className = 'variantCountBadge' + (n ? '' : ' isEmpty');
+  el.textContent = n === 1 ? '1 variante' : `${n} varianti`;
+  el.title = n
+    ? `${n} varianti salvate accanto a questo layout`
+    : 'Nessuna variante: solo il layout base';
+  return el;
+}
+
 function buildLibraryRow(item){
   const key = libraryItemKey(item);
   const selectPath = librarySelectPath(item);
@@ -1120,6 +1134,8 @@ function buildLibraryRow(item){
   title.append(nameEl, metaEl);
   const rowSize = buildCanvasSizeBadge(item);
   if(rowSize) title.appendChild(rowSize);
+  const rowVariants = buildVariantCountBadge(item);
+  if(rowVariants) title.appendChild(rowVariants);
   if(item.kind !== 'folder') title.appendChild(buildTagsStrip(item));
 
   const openBtn = document.createElement('button');
@@ -1255,7 +1271,12 @@ function buildLibraryCard(item){
   bindLibraryNameCopy(nameEl, item);
   const kindMeta = document.createElement('small');
   kindMeta.textContent = `${badge} · ${item.rel || ''}`;
-  info.append(nameEl, kindMeta);
+  const nameRow = document.createElement('div');
+  nameRow.className = 'layoutNameRow';
+  nameRow.appendChild(nameEl);
+  const cardVariants = buildVariantCountBadge(item);
+  if(cardVariants) nameRow.appendChild(cardVariants);
+  info.append(nameRow, kindMeta);
   if(item.mtime_iso){
     const mtimeMeta = document.createElement('small');
     mtimeMeta.textContent = item.mtime_iso;

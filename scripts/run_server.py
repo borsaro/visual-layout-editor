@@ -265,6 +265,28 @@ def _read_layout_dims(path: Path):
     return canvas.get('width'), canvas.get('height'), len(data.get('layers') or [])
 
 
+def variant_count(layout_path: Path) -> int:
+    """How many variants sit beside this layout, cached on the sidecar's own stat.
+
+    The gallery shows it on every card, so it must not cost a JSON parse per listing
+    pass — and it must follow the sidecar, not the layout: saving variants leaves the
+    .layout.json untouched.
+    """
+    from variants import variants_path
+    side = variants_path(layout_path)
+    try:
+        st = side.stat()
+    except OSError:
+        return 0
+    return cached_dims(side, st, lambda: _count_variants(side))[0] or 0
+
+
+def _count_variants(side: Path):
+    data = json.loads(side.read_text(encoding='utf-8'))
+    variants = data.get('variants') if isinstance(data, dict) else None
+    return (len(variants) if isinstance(variants, list) else 0), None, None
+
+
 def layout_meta(path: Path, light: bool = True):
     from library_preview import preview_url_for
     st = path.stat()
@@ -281,6 +303,7 @@ def layout_meta(path: Path, light: bool = True):
         'mtime_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.st_mtime)),
         'canvas': {'width': w, 'height': h},
         'layers': layer_count,
+        'variants': variant_count(path),
         'preview_src': preview_url_for(path, public_path),
     }
 
@@ -302,6 +325,7 @@ def image_meta(path: Path, light: bool = True):
         'layers': 1,
         'has_layout': lp.exists(),
         'layout_path': public_path(lp) if lp.exists() else None,
+        'variants': variant_count(lp) if lp.exists() else 0,
         'preview_src': '/api/file?path=' + public_path(path),
         'asset_src': asset_src_for(path),
     }
