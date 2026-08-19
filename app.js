@@ -737,12 +737,75 @@ function groupBox(layers){
   const x=Math.min(...xs), y=Math.min(...ys), r=Math.max(...x2), b=Math.max(...y2);
   return {x,y,w:r-x,h:b-y};
 }
+const SHIFT_DRAG_THRESHOLD = 3;
+
+/**
+ * Shift on a layer: a click that never moves ticks it, a drag moves the selection
+ * with the axis locked from the very first pixel.
+ */
+function beginShiftGesture(ev, id){
+  const sx = ev.clientX, sy = ev.clientY;
+  let started = false;
+
+  const onMove = (move) => {
+    if(started) return;
+    if(Math.abs(move.clientX - sx) < SHIFT_DRAG_THRESHOLD
+       && Math.abs(move.clientY - sy) < SHIFT_DRAG_THRESHOLD) return;
+    started = true;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    // A layer nobody had selected becomes the selection, exactly as a plain drag does.
+    if(!isSelected(id)) selectOnly(id);
+    // The drag starts from where the press was, not from here, so the first three
+    // pixels are not lost.
+    if(startMoveDrag(id, sx, sy)) onLayerMove(move);
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if(started) return;
+    toggleSelect(id);
+    render();
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+/** The move half of startDrag, shared with the Shift gesture. Returns false if nothing moves. */
+function startMoveDrag(id, sx, sy){
+  const target = state.layers.find(l => l.id === id);
+  if(layerLocked(target)){
+    if(!isSelected(id)){ selectOnly(id); render(); }
+    return false;
+  }
+  const layers = selectedLayers().filter(l => !layerLocked(l));
+  if(!layers.length){ render(); return false; }
+  pushHistory();
+  drag = { id, handle: null, resizing: false, cropMode: false, freeResizeMode: false, sx, sy,
+           originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})),
+           box: groupBox(layers) };
+  document.addEventListener('mousemove', onLayerMove);
+  document.addEventListener('mouseup', endDrag);
+  render();
+  return true;
+}
+
 function startDrag(ev, id, handle=null){
   // In marquee mode a drag over a layer must reach the canvas, so this bails out
   // WITHOUT stopping propagation — the handles stay live, or resizing would die too.
   if(!handle && state.marqueeMode) return;
   ev.preventDefault(); ev.stopPropagation();
   const target = state.layers.find(l => l.id === id);
+  if(!handle && ev.shiftKey && !ev.metaKey && !ev.ctrlKey){
+    // Shift+click ticks a layer, Shift+drag moves on one axis: two gestures that only
+    // share their first instant, so the choice is made at the drag threshold rather
+    // than at mousedown. Deciding early is what forced the axis lock to be pressed
+    // late, after the move had already started off-axis.
+    beginShiftGesture(ev, id);
+    return;
+  }
   if(!handle && isSelectionModifier(ev)){
     toggleSelect(id);
     render();
@@ -768,7 +831,7 @@ function startDrag(ev, id, handle=null){
   if(!layers.length){ render(); return; }
   pushHistory();
   drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
-  document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', endDrag); render();
+  document.addEventListener('mousemove', onLayerMove); document.addEventListener('mouseup', endDrag); render();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function normalizedCrop(l){
@@ -857,7 +920,8 @@ function scaleTextWithBox(layer, original){
   if(spacing) layer.letterSpacing = Math.round(spacing * factor * 100) / 100;
 }
 
-function onMove(ev){
+/** The live drag: resize, crop, warp or move, depending on how it started. */
+function onLayerMove(ev){
   if(!drag) return;
   const scale=state.zoom/100; const dx=(ev.clientX-drag.sx)/scale; const dy=(ev.clientY-drag.sy)/scale;
   if(drag.resizing){
@@ -903,7 +967,7 @@ function onMove(ev){
   }
   render();
 }
-function endDrag(){ drag=null; markDirty(); document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',endDrag); }
+function endDrag(){ drag=null; markDirty(); document.removeEventListener('mousemove',onLayerMove); document.removeEventListener('mouseup',endDrag); }
 
 function startMarquee(ev){
   // A drag on a layer moves that layer; the band belongs to everything else: bare
