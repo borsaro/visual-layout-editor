@@ -167,6 +167,7 @@ function updateCanvasInfo(){
   const hiddenCount = state.layers.filter(l => !layerVisible(l)).length;
   const hiddenInfo = hiddenCount ? ` · ${hiddenCount} nascosti` : '';
   const info = $('canvasInfo');
+  if(info) info.title = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer · ${state.currentLayoutPath || state.loadedJsonFilename || 'non salvato'}`;
   if(info) info.innerHTML = `${state.canvas.width}×${state.canvas.height} · ${state.layers.length} layer${selCount}${hiddenInfo} · undo ${state.history.length} / redo ${state.future.length}${fileInfo}${dirtyInfo ? `<span class="dirtyMark">${dirtyInfo}</span>` : ''}`;
 }
 

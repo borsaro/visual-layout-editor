@@ -172,3 +172,8 @@
 /* Fixed width, not max-width: the arrows must sit still while the name under them
    changes length, or every step nudges the button out from under the pointer. */
 .editQueueLabel{flex:0 0 190px;width:190px;text-align:center;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* The toolbar wraps to fit narrow windows, but it must not re-wrap while you work:
+   this line grows when a layer is selected, and a second row appearing under the
+   cursor shifts the canvas down mid-click. It takes the leftover room and truncates. */
+#canvasInfo{flex:1 1 140px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
