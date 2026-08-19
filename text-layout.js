@@ -89,13 +89,21 @@ function measureTextLayout(layer) {
     return { ascent, descent };
   });
 
+  // Font metrics, not the ink of this particular string: they are what the browser
+  // lays a line box out with, so they are what the canvas has to use to land on the
+  // same baseline. Measured off a fixed probe, so a line of all-caps and one full of
+  // accents and descenders sit identically — with the ink metrics they did not.
+  const probe = ctx.measureText('Hg');
+  const fontAscent = probe.fontBoundingBoxAscent ?? Math.max(...metrics.map((m) => m.ascent), fontSize * 0.78);
+  const fontDescent = probe.fontBoundingBoxDescent ?? Math.max(...metrics.map((m) => m.descent), fontSize * 0.22);
+
   const blockAscent = Math.max(...metrics.map((m) => m.ascent), 0);
   const blockDescent = Math.max(...metrics.map((m) => m.descent), 0);
   const totalH = lines.length <= 1
     ? blockAscent + blockDescent
     : blockAscent + (lines.length - 1) * lh + blockDescent;
 
-  return { lines, lh, fontSize, blockAscent, blockDescent, totalH, metrics };
+  return { lines, lh, fontSize, blockAscent, blockDescent, totalH, metrics, fontAscent, fontDescent };
 }
 
 function textBlockOffsetY(layer, layout) {
@@ -112,32 +120,46 @@ function textBlockDomPaddingTop(layer, layout) {
   return Math.max(0, offsetY - halfLeading);
 }
 
-function paintCanvasTextLines(ctx, layer, layout, offsetY) {
+/**
+ * Where the browser puts the first baseline, reproduced on the canvas.
+ *
+ * The DOM node is given a padding-top, then the browser adds half-leading and the
+ * font's own ascent. Painting instead at the ink ascent of the text — which is what
+ * this did — moved the line by however tall that particular string happened to be:
+ * an all-caps headline landed right while a line with accents and descenders sat
+ * several pixels off, and the export stopped matching the editor.
+ */
+function textFirstBaselineY(layer, layout) {
+  const padTop = textBlockDomPaddingTop(layer, layout);
+  const halfLeading = (layout.lh - layout.fontAscent - layout.fontDescent) / 2;
+  return layer.y + padTop + halfLeading + layout.fontAscent;
+}
+
+function paintCanvasTextLines(ctx, layer, layout) {
+  const firstBaseline = textFirstBaselineY(layer, layout);
   layout.lines.forEach((line, i) => {
     let x = layer.x;
     if (layer.align === 'center') x = layer.x + layer.w / 2;
     if (layer.align === 'right') x = layer.x + layer.w;
     ctx.textAlign = layer.align || 'left';
-    const baselineY = layer.y + offsetY + layout.blockAscent + i * layout.lh;
-    const m = layout.metrics[i] || { ascent: layout.fontSize * 0.78, descent: layout.fontSize * 0.22 };
+    const baselineY = firstBaseline + i * layout.lh;
     ctx.fillText(line, x, baselineY);
-    drawTextDecorations(ctx, layer, line, x, baselineY, m.ascent, m.descent);
+    drawTextDecorations(ctx, layer, line, x, baselineY, layout.fontAscent, layout.fontDescent);
   });
 }
 
 function drawCanvasText(ctx, layer) {
   const layout = measureTextLayout(layer);
-  const offsetY = textBlockOffsetY(layer, layout);
   ctx.fillStyle = layer.color || '#000';
   ctx.font = textFontCss(layer);
   applyCanvasLetterSpacing(ctx, layer);
   ctx.textBaseline = 'alphabetic';
 
   if (typeof applyCanvasGlow === 'function' && applyCanvasGlow(ctx, layer.glow)) {
-    paintCanvasTextLines(ctx, layer, layout, offsetY);
+    paintCanvasTextLines(ctx, layer, layout);
     clearCanvasShadow(ctx);
   }
   if (typeof applyCanvasShadow === 'function') applyCanvasShadow(ctx, layer.shadow);
-  paintCanvasTextLines(ctx, layer, layout, offsetY);
+  paintCanvasTextLines(ctx, layer, layout);
   if (typeof clearCanvasShadow === 'function') clearCanvasShadow(ctx);
 }
