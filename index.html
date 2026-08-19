@@ -117,12 +117,14 @@
         </div>
       </div>
       <section id="variantsBar" class="variantsBar isCollapsed">
-        <button type="button" id="variantsToggle" class="variantsBarHead" aria-expanded="false">
-          <span class="variantsTitle">Varianti</span>
-          <span id="variantsCount" class="variantsCount">0</span>
+        <div class="variantsBarHead">
+          <button type="button" id="variantsToggle" class="variantsBarToggle" aria-expanded="false" title="Apri o chiudi le anteprime">
+            <span class="variantsTitle">Varianti</span>
+            <span class="variantsChevron" aria-hidden="true"></span>
+          </button>
+          <div id="variantsDots" class="variantsDots" role="group" aria-label="Passa a una variante"></div>
           <span id="variantsStale" class="variantsStale" hidden>base cambiato</span>
-          <span class="variantsChevron" aria-hidden="true"></span>
-        </button>
+        </div>
         <div class="variantsBarBody">
           <div class="variantsActions">
             <button type="button" id="variantsNewBtn" title="Crea una variante come duplicato del layout base, poi modificala sul canvas">+ Nuova variante</button>

@@ -239,6 +239,15 @@ function syncVariantsSelectionUi() {
     del.disabled = !n;
     del.textContent = n > 1 ? `Elimina (${n})` : 'Elimina';
   }
+  document.querySelectorAll('.variantDot').forEach((dot) => {
+    const id = dot.dataset.dotId;
+    const isBase = id === VARIANT_BASE_CARD_ID;
+    dot.classList.toggle('isActive', isBase ? !activeId : id === activeId);
+    dot.classList.toggle('hasEdits', isBase
+      ? (activeId ? !!VARIANTS_STATE.draftBase : !!liveEdited)
+      : ((id === activeId && !!liveEdited) || variantIsPending(id)));
+  });
+
   const empty = $('variantsEmpty');
   if (empty) empty.hidden = variants.length > 0;
 
@@ -257,13 +266,49 @@ function syncVariantsSelectionUi() {
   }
 }
 
+/**
+ * One numbered dot per variant in the bar's header, plus B for the base.
+ *
+ * The header is the only part of the bar that stays visible when it is collapsed, so
+ * this is what makes switching possible without opening the thumbnails: a count told
+ * you how many there were and let you do nothing about it.
+ */
+function renderVariantsDots(variants) {
+  const host = $('variantsDots');
+  if (!host) return;
+  host.innerHTML = '';
+  host.appendChild(variantDot({ id: null, label: 'Base', text: 'B' }));
+  variants.forEach((variant, i) => {
+    host.appendChild(variantDot({
+      id: variant.id,
+      label: variant.label || variant.id,
+      text: String(i + 1),
+      stale: variant.stale,
+    }));
+  });
+}
+
+function variantDot({ id, label, text, stale = false }) {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'variantDot' + (stale ? ' isStale' : '');
+  dot.dataset.dotId = id || VARIANT_BASE_CARD_ID;
+  dot.textContent = text;
+  dot.title = label;
+  dot.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (id) selectVariant(id, ev);
+    else { VARIANTS_STATE.checked = new Set(); restoreVariantBase(); syncVariantsSelectionUi(); }
+  });
+  return dot;
+}
+
 function renderVariantsBar() {
   const bar = variantsBarEl();
   if (!bar) return;
   const variants = VARIANTS_STATE.payload?.variants || [];
 
-  const count = $('variantsCount');
-  if (count) count.textContent = String(variants.length);
+  renderVariantsDots(variants);
   const stale = $('variantsStale');
   if (stale) stale.hidden = !VARIANTS_STATE.payload?.baseChanged;
 
