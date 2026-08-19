@@ -890,7 +890,16 @@ function onMove(ev){
       drag.originals.forEach(o=>{ const l=state.layers.find(x=>x.id===o.id); if(!l) return; l.x=newBox.x+(o.x-drag.box.x)*sx; l.y=newBox.y+(o.y-drag.box.y)*sy; l.w=Math.max(10,o.w*sx); l.h=Math.max(10,o.h*sy); });
     }
   } else {
-    drag.originals.forEach(o=>{ const l=state.layers.find(x=>x.id===o.id); if(!l) return; l.x=o.x+dx; l.y=o.y+dy; });
+    // Shift locks the move to the axis you have travelled furthest along, for every
+    // selected layer at once. It is read live, so it can be pressed and released
+    // mid-drag: the object snaps onto the axis and back off it without restarting.
+    // (At mousedown Shift means "add to the selection", which is why holding it from
+    // the start does not begin a move at all.)
+    let mx = dx, my = dy;
+    if(ev.shiftKey){
+      if(Math.abs(dx) >= Math.abs(dy)) my = 0; else mx = 0;
+    }
+    drag.originals.forEach(o=>{ const l=state.layers.find(x=>x.id===o.id); if(!l) return; l.x=o.x+mx; l.y=o.y+my; });
   }
   render();
 }
