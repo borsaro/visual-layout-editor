@@ -72,7 +72,7 @@ Styled text block, soft-wrapped to the layer box
 | --- | --- | --- |
 | `text` | string | Text content. \n forces a line break; the rest soft-wraps to w |
 | `fontFamily` | string | Family name as installed on the host (GET /api/fonts) |
-| `fontSize` | number | Font size in px |
+| `fontSize` | number | Font size in px — dragging a handle with Cmd scales it with the box |
 | `fontWeight` | string | Numeric weight 100..900 as a string, e.g. "800" |
 | `fontStyle` | string | italic needs a real italic face installed; use skewX for a synthetic slant _(uno di: `normal`, `italic`)_ |
 | `color` | string | Text color, hex like #111111 |

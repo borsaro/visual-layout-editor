@@ -763,7 +763,7 @@ function startDrag(ev, id, handle=null){
   const layers=selectedLayers().filter(l => !layerLocked(l));
   if(!layers.length){ render(); return; }
   pushHistory();
-  drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
+  drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
   document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', endDrag); render();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
@@ -839,6 +839,20 @@ function resizeBoxFromHandle(original, handle, dx, dy, keepAspect=false){
   }
   return {x:left,y:top,w,h};
 }
+/**
+ * Type follows the box: everything measured in px scales by the same factor the box
+ * did, so the block keeps its proportions instead of reflowing into a new shape.
+ * The box is resized with its aspect locked, so one factor describes both sides.
+ */
+function scaleTextWithBox(layer, original){
+  const factor = layer.w / Math.max(1, original.w);
+  if(!isFinite(factor) || factor <= 0) return;
+  const size = Number(original.fontSize);
+  if(size) layer.fontSize = Math.max(1, Math.round(size * factor * 10) / 10);
+  const spacing = Number(original.letterSpacing);
+  if(spacing) layer.letterSpacing = Math.round(spacing * factor * 100) / 100;
+}
+
 function onMove(ev){
   if(!drag) return;
   const scale=state.zoom/100; const dx=(ev.clientX-drag.sx)/scale; const dy=(ev.clientY-drag.sy)/scale;
@@ -854,13 +868,18 @@ function onMove(ev){
     // Outside crop mode Cmd-crop stays free, exactly as before.
     const cropKeepAspect = toggleCrop && !(ev.ctrlKey || ev.metaKey);
     const freeResizeMode = drag.freeResizeMode || ev.shiftKey;
-    const keepAspect = single && layer?.type === 'image' && !freeResizeMode && !cropMode;
+    // On text, Cmd scales the type with the box: the plain drag reflows the same
+    // wording inside a new box, this one blows the whole block up or down.
+    const textScaleMode = single && layer?.type === 'text' && (ev.metaKey || ev.ctrlKey);
+    const keepAspect = single && !freeResizeMode && !cropMode
+      && (layer?.type === 'image' || textScaleMode);
     if(maskVertexMode){
       applyMaskVertexFromHandle(layer, orig, drag.handle, dx, dy);
     } else if(cropMode){
       applyImageCropFromHandle(layer, orig, drag.handle, dx, dy, cropKeepAspect);
     } else if(single){
       Object.assign(layer, resizeBoxFromHandle(orig, drag.handle, dx, dy, keepAspect));
+      if(textScaleMode) scaleTextWithBox(layer, orig);
     } else {
       const newBox=resizeBoxFromHandle(drag.box, drag.handle, dx, dy, false);
       const sx=newBox.w/Math.max(1,drag.box.w), sy=newBox.h/Math.max(1,drag.box.h);
