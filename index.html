@@ -128,7 +128,8 @@
         <div class="variantsBarBody">
           <div class="variantsActions">
             <button type="button" id="variantsNewBtn" title="Crea una variante come duplicato del layout base, poi modificala sul canvas">+ Nuova variante</button>
-            <button type="button" id="variantsPromoteBtn" disabled>Promuovi a layout</button>
+            <button type="button" id="variantsMakeBaseBtn" disabled title="La variante selezionata diventa il layout base; il base attuale resta come variante">Promuovi a base</button>
+            <button type="button" id="variantsPromoteBtn" disabled title="Scrive la variante come .layout.json indipendente e la toglie da questo progetto">Estrai layout indipendente</button>
             <button type="button" id="variantsDeleteBtn" disabled>Elimina</button>
             <button type="button" id="variantsReloadBtn" title="Rileggi il set dal disco">Aggiorna</button>
             <span id="variantsHint" class="muted hint"></span>

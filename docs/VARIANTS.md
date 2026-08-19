@@ -64,12 +64,20 @@ sono vuote e la variante è identica al base: la si modifica e al salvataggio le
 differenze diventano le sue ops. Partendo da una variante, si ottiene una copia di
 quella.
 
-## Promozione: uscire dal progetto
+## Promozione: diventare il base, o uscire dal progetto
 
-**Promuovi a layout** appiattisce una variante in un `.layout.json` autonomo accanto al
-base. Da quel momento è un layout indipendente: per modificarlo si apre quel file, non
-più la variante. La variante resta nel set marcata con il file che ha prodotto, così
-non si perde da dove veniva. Si promuove ciò che è su disco, quindi va salvato prima.
+**Promuovi a base** scambia una variante con il base: quella diventa il `.layout.json`,
+e il base di prima resta nel progetto come variante "Base precedente". Le altre varianti
+vengono riscritte contro il nuovo base — le loro ops sono differenze *da qualcosa*, e
+lasciarle com'erano cambierebbe in silenzio ciò che disegnano. Anteprima del layout e
+miniature vengono ridisegnate.
+
+**Estrai layout indipendente** appiattisce una variante in un `.layout.json` autonomo
+accanto al base e **la toglie dal set**: da quel momento quel design si modifica in un
+solo posto. Lasciarne una copia nel progetto significherebbe due posti dove modificare
+la stessa cosa, e nessuno che dica quale è quello buono.
+
+Entrambe agiscono su ciò che è su disco, quindi va salvato prima.
 
 **Salva con nome** si comporta di conseguenza: dal base copia anche il set di varianti
 sul nuovo nome (le ops descrivono gli stessi layer); da una variante scrive quella
@@ -86,7 +94,8 @@ soltanto, senza toccare il canvas, per eliminarne più di una in un colpo.
 | --- | --- |
 | `save_variants(path, variants, replace=True, thumbnails=True)` | Scrive il set e rigenera le anteprime. `replace=False` fonde per id. `thumbnails=False` salta il rendering: molto più veloce mentre si itera. |
 | `list_variants(path)` | Legge il set con i flag di staleness. |
-| `promote_variant(path, variant_id, filename=None)` | Fonde una variante in un layout autonomo. |
+| `make_variant_base(path, variant_id, keep_old_base=True)` | La variante diventa il base; il vecchio base resta come variante e le altre sono riscritte. |
+| `extract_variant_to_layout(path, variant_id, filename=None)` | Scrive la variante come layout autonomo e la toglie dal set. |
 | `delete_variants(path, variant_ids)` | Elimina varianti e relative anteprime. |
 
 ## Endpoint HTTP
@@ -97,6 +106,7 @@ soltanto, senza toccare il canvas, per eliminarne più di una in un colpo.
 | GET | `/api/variant-thumb?path=&id=` |
 | POST | `/api/variants` |
 | POST | `/api/variants/promote` |
+| POST | `/api/variants/make-base` |
 | POST | `/api/variants/delete` |
 
 ## Note di implementazione

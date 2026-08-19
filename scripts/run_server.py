@@ -404,6 +404,18 @@ def _write_variant_thumbs(layout_path: Path, layout: dict, variants: list[dict])
     return written
 
 
+def _write_layout_preview(layout_path: Path, layout: dict) -> bool:
+    """Redraw the layout's own thumbnail sidecar, the one the gallery and the base card
+    read. Server-side, because a base swap happens with or without an editor open."""
+    from export_render import render_layout_thumbs
+    from library_preview import preview_sidecar_path
+    data = render_layout_thumbs([layout], origin=f'http://127.0.0.1:{PORT}')
+    if not data or not data[0]:
+        return False
+    preview_sidecar_path(layout_path).write_bytes(data[0])
+    return True
+
+
 def make_layout_from_image(path: Path):
     w, h = image_size(path)
     src = asset_src_for(path)
@@ -665,6 +677,7 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
             '/api/live/patch',
             '/api/variants',
             '/api/variants/promote',
+            '/api/variants/make-base',
             '/api/variants/delete',
             '/api/remove-background',
             '/api/bg-models',
@@ -775,9 +788,43 @@ class RobyLayoutHandler(SimpleHTTPRequestHandler):
                     'ok': True,
                     'path': public_path(Path(res['path'])),
                     'filename': res['filename'],
+                    'removed': res['removed'],
+                    'remaining': res['remaining'],
                 })
                 notify_file_change(target, 'variants', origin=payload.get('client'),
                                    label='promote_variant')
+                return
+
+            if parsed.path == '/api/variants/make-base':
+                from variants import make_variant_base
+                target = resolve_allowed_layout(payload.get('path'))
+                layout = json.loads(target.read_text(encoding='utf-8'))
+                res = make_variant_base(
+                    target, layout, payload.get('id'),
+                    keep_old_base=bool(payload.get('keep_old_base', True)),
+                    old_base_label=payload.get('old_base_label'),
+                )
+                thumbs = 0
+                thumb_error = None
+                if payload.get('thumbnails', True):
+                    try:
+                        # The base changed, so every picture in the project is now of
+                        # something else: the layout's own preview included.
+                        thumbs = _write_variant_thumbs(target, res['layout'], res['variants'])
+                        _write_layout_preview(target, res['layout'])
+                    except Exception as e:
+                        thumb_error = str(e)
+                notify_file_change(target, 'layout', origin=payload.get('client'), label='make_variant_base')
+                notify_file_change(target, 'variants', origin=payload.get('client'), label='make_variant_base')
+                self._json(200, {
+                    'ok': True,
+                    'path': public_path(target),
+                    'promoted': res['promoted'],
+                    'old_base_id': res['old_base_id'],
+                    'variants': [v['id'] for v in res['variants']],
+                    'thumbnails': thumbs,
+                    'thumbnail_error': thumb_error,
+                })
                 return
 
             if parsed.path == '/api/variants/delete':

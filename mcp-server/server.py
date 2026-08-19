@@ -419,11 +419,28 @@ async def save_variants(
 
 
 @mcp.tool()
-async def promote_variant(path: str, variant_id: str, filename: str | None = None) -> dict:
-    """Bake one variant into its own standalone .layout.json next to the base.
+async def make_variant_base(path: str, variant_id: str, keep_old_base: bool = True,
+                            old_base_label: str | None = None) -> dict:
+    """Swap a variant with the base: it becomes the layout, the layout becomes a variant.
 
-    Use when a variant is picked as a keeper. The variant stays in the set, marked with
-    the file it produced, so the link back to where it came from survives.
+    Use when the project has moved on and one alternative is now the real design. Every
+    other variant is rewritten against the new base, so they keep rendering what they
+    rendered before. keep_old_base=False drops the previous base instead of keeping it
+    as a variant. Thumbnails and the layout preview are redrawn.
+    """
+    payload: dict = {'path': path, 'id': variant_id, 'keep_old_base': keep_old_base}
+    if old_base_label:
+        payload['old_base_label'] = old_base_label
+    return await _post('/api/variants/make-base', payload)
+
+
+@mcp.tool()
+async def extract_variant_to_layout(path: str, variant_id: str, filename: str | None = None) -> dict:
+    """Write one variant as an independent .layout.json and take it out of the project.
+
+    For a version that stops being an alternative and becomes its own piece: it leaves
+    the set, so there is only ever one place to edit it. To make a variant the main
+    design of this same project, use make_variant_base instead.
     """
     payload: dict = {'path': path, 'id': variant_id}
     if filename:

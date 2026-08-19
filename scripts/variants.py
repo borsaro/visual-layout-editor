@@ -204,6 +204,89 @@ def annotate_staleness(payload: dict, layout: dict) -> dict:
     return payload
 
 
+def diff_layers_to_ops(base_layers: list, other_layers: list) -> dict:
+    """other = base + ops. The inverse of apply_variant, restricted to writable fields.
+
+    Only fields a patch may carry are compared, so the ops produced here can never
+    describe a difference that applying them would silently drop.
+    """
+    from patch_layers import ALLOWED_PATCH_KEYS
+    base = {l.get('id'): l for l in base_layers or [] if isinstance(l, dict)}
+    other = {l.get('id'): l for l in other_layers or [] if isinstance(l, dict)}
+    patches = []
+    for lid, layer in other.items():
+        before = base.get(lid)
+        if before is None:
+            continue
+        patch = {}
+        for key in set(list(before) + list(layer)):
+            if key in ('id', 'type') or key not in ALLOWED_PATCH_KEYS:
+                continue
+            if json.dumps(before.get(key), sort_keys=True) != json.dumps(layer.get(key), sort_keys=True):
+                patch[key] = layer.get(key)
+        if patch:
+            patches.append({'id': lid, **patch})
+    return {
+        'patches': patches,
+        'add': [json.loads(json.dumps(l)) for lid, l in other.items() if lid not in base],
+        'remove': [lid for lid in base if lid not in other],
+    }
+
+
+def make_variant_base(layout_path: Path, layout: dict, variant_id: str,
+                      keep_old_base: bool = True, old_base_label: str | None = None) -> dict:
+    """Swap a variant with the base: it becomes the layout, the layout becomes a variant.
+
+    Every other variant is rewritten against the new base — their ops describe a
+    difference from whatever the base is, so leaving them alone would silently change
+    what they render.
+    """
+    vid = safe_variant_id(variant_id)
+    payload = read_variants(layout_path)
+    variants = payload.get('variants') or []
+    chosen = next((v for v in variants if v.get('id') == vid), None)
+    if not chosen:
+        raise ValueError(f'Variant {vid!r} not found')
+
+    new_base = apply_variant(layout, chosen)
+    rebuilt = []
+    if keep_old_base:
+        old_ops = diff_layers_to_ops(new_base.get('layers') or [], layout.get('layers') or [])
+        taken = {v.get('id') for v in variants}
+        old_id = safe_variant_id('base-precedente')
+        i = 2
+        while old_id in taken:
+            old_id = safe_variant_id(f'base-precedente-{i}')
+            i += 1
+        rebuilt.append({
+            'id': old_id,
+            'label': old_base_label or 'Base precedente',
+            'note': f'Era il layout base prima che {chosen.get("label") or vid} lo diventasse',
+            'axes': ['base'],
+            'ops': old_ops,
+            'promoted': None,
+            'from': None,
+        })
+    for v in variants:
+        if v.get('id') == vid:
+            continue                      # it is the base now
+        baked = apply_variant(layout, v)
+        rebuilt.append({**v, 'ops': diff_layers_to_ops(new_base.get('layers') or [], baked.get('layers') or [])})
+
+    layout_path.write_text(json.dumps(new_base, ensure_ascii=False, indent=2), encoding='utf-8')
+    if rebuilt:
+        write_variants(layout_path, new_base, rebuilt, replace=True)
+    else:
+        vp = variants_path(layout_path)
+        if vp.exists():
+            vp.unlink()
+    thumb = variant_thumb_path(layout_path, vid)
+    if thumb.exists():
+        thumb.unlink()                    # the promoted one is no longer a variant
+    return {'path': str(layout_path), 'promoted': vid, 'layout': new_base,
+            'variants': rebuilt, 'old_base_id': rebuilt[0]['id'] if keep_old_base and rebuilt else None}
+
+
 def promote_variant(layout_path: Path, layout: dict, variant_id: str, filename: str | None = None) -> dict:
     """Bake one variant into a standalone .layout.json next to the base."""
     vid = safe_variant_id(variant_id)
@@ -224,7 +307,17 @@ def promote_variant(layout_path: Path, layout: dict, variant_id: str, filename: 
         raise ValueError(f'{name} already exists')
     out_path.write_text(json.dumps(baked, ensure_ascii=False, indent=2), encoding='utf-8')
 
-    # Keep the variant in the set, marked, so the link to where it came from survives.
-    variant['promoted'] = name
-    write_variants(layout_path, layout, payload.get('variants') or [], replace=True)
-    return {'path': str(out_path), 'filename': name, 'layout': baked}
+    # Extracting takes the variant OUT of the project: leaving a copy behind would mean
+    # two places to edit the same design, and nothing to say which one is current.
+    kept = [v for v in (payload.get('variants') or []) if v.get('id') != vid]
+    if kept:
+        write_variants(layout_path, layout, kept, replace=True)
+    else:
+        vp = variants_path(layout_path)
+        if vp.exists():
+            vp.unlink()
+    thumb = variant_thumb_path(layout_path, vid)
+    if thumb.exists():
+        thumb.unlink()
+    return {'path': str(out_path), 'filename': name, 'layout': baked, 'removed': vid,
+            'remaining': len(kept)}

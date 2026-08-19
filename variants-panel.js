@@ -233,6 +233,8 @@ function syncVariantsSelectionUi() {
   });
   const promote = $('variantsPromoteBtn');
   if (promote) promote.disabled = !activeId;
+  const makeBase = $('variantsMakeBaseBtn');
+  if (makeBase) makeBase.disabled = !activeId;
   const del = $('variantsDeleteBtn');
   if (del) {
     const n = VARIANTS_STATE.checked.size;
@@ -848,10 +850,53 @@ async function promoteActiveVariant() {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'promote failed');
-    showToast(`Promossa → ${data.filename} · apri quel layout per modificarlo`);
+    // It left the project: the canvas must not keep showing a variant that no longer
+    // exists, so fall back to the base before the strip is rebuilt.
+    if (VARIANTS_STATE.activeId === id) {
+      VARIANTS_STATE.draftOps.delete(id);
+      VARIANTS_STATE.newIds.delete(id);
+      VARIANTS_STATE.activeId = null;
+      showVariantOnCanvas(null);
+    }
+    VARIANTS_STATE.checked.delete(id);
+    showToast(`Estratta → ${data.filename} · tolta da questo progetto`);
     await loadVariants();
   } catch (e) {
-    showToast('Promozione fallita: ' + (e.message || e));
+    showToast('Estrazione fallita: ' + (e.message || e));
+  }
+}
+
+/**
+ * The selected variant becomes the layout, and the layout becomes a variant beside it.
+ * Every other variant is rewritten against the new base by the server — their ops are
+ * differences from the base, so they would render something else otherwise.
+ */
+async function makeActiveVariantBase() {
+  const id = VARIANTS_STATE.activeId;
+  const path = state.currentLayoutPath;
+  if (!id || !path) return;
+  if (variantsHaveUnsavedWork()) {
+    showToast('Salva il progetto prima: si promuove ciò che è su disco');
+    return;
+  }
+  const label = (VARIANTS_STATE.payload?.variants || []).find((v) => v.id === id)?.label || id;
+  if (!confirm(`"${label}" diventa il layout base. Il base attuale resta nel progetto come variante. Procedere?`)) return;
+  try {
+    const res = await fetch('/api/variants/make-base', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, id, client: liveClientId?.() }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'make-base failed');
+    VARIANTS_STATE.checked = new Set();
+    VARIANTS_STATE.anchorId = null;
+    VARIANTS_STATE.activeId = null;
+    await loadLayoutUrl(path, { skipConfirm: true });   // the file itself changed
+    VARIANTS_STATE.thumbsVersion += 1;
+    showToast(`"${label}" è ora il layout base · il precedente è la variante "${data.old_base_id}"`);
+  } catch (e) {
+    showToast('Promozione a base fallita: ' + (e.message || e));
   }
 }
 
@@ -897,6 +942,7 @@ function bindVariantsBar() {
   });
   bindVariantsMarquee($('variantsList'));
   $('variantsNewBtn')?.addEventListener('click', createVariantFromCanvas);
+  $('variantsMakeBaseBtn')?.addEventListener('click', makeActiveVariantBase);
   $('variantsPromoteBtn')?.addEventListener('click', promoteActiveVariant);
   $('variantsDeleteBtn')?.addEventListener('click', deleteCheckedVariants);
   $('variantsReloadBtn')?.addEventListener('click', () => loadVariants({ quiet: false }));
