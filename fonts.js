@@ -89,7 +89,12 @@ async function ensureLayoutCustomFonts(layers) {
     const source = String(layer.fontSource || '').trim();
     if (!family || !source) return;
     const url = typeof resolveAssetUrl === 'function' ? resolveAssetUrl(source) : source;
-    const key = `src:${family}|${url}`;
+    // Keyed by family alone, not by family+url: a second face registered under a name
+    // that is already loaded leaves the canvas resolving that name to nothing, and the
+    // text silently falls back to a system font with different metrics. It shows up
+    // when one page renders several layouts in a row — the variant thumbnails — where
+    // the same family arrives from each layout's own copy of the file.
+    const key = `src:${family}`;
     if (!_faceLoads.has(key)) {
       _faceLoads.set(key, (async () => {
         const face = new FontFace(family, `url(${url})`);
