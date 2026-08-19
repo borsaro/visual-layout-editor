@@ -113,7 +113,7 @@ LAYER_TYPES = {
         'fields': [
             'text', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'color',
             'align', 'vAlign', 'lineHeight', 'letterSpacing', 'textTransform',
-            'underline', 'strikethrough', 'glow',
+            'underline', 'strikethrough', 'glow', 'fontSource',
         ],
     },
     'rect': {
@@ -122,7 +122,7 @@ LAYER_TYPES = {
     },
     'image': {
         'desc': 'Bitmap layer with fit, crop, color adjust and black key',
-        'fields': ['src', 'fit', 'crop', 'adjust', 'keyBlack'],
+        'fields': ['src', 'fit', 'crop', 'adjust', 'keyBlack', 'svgBase', 'svgTint'],
     },
     'gradient': {
         'desc': 'Linear or radial gradient panel',
@@ -308,6 +308,23 @@ LAYER_FIELDS_FOR_AGENTS = {
     'shadow': {'type': 'object', 'desc': '{enabled,color,blur,offsetX,offsetY,opacity}'},
     'glow': {'type': 'object', 'desc': 'Text only: {enabled,color,blur,opacity}'},
     'keyBlack': {'type': 'object', 'desc': 'Image color key: {enabled,color,threshold,softness}'},
+    # Written by the editor itself, so patches and variants have to be able to carry
+    # them: without these a variant silently loses a recoloured SVG or a font that
+    # lives beside its own layout, and the difference only shows up in the render.
+    'fontSource': {
+        'type': 'string',
+        'desc': 'Text only: path to the font file backing fontFamily (campaign-relative). '
+                'Set it together with fontFamily when the face is not a host font',
+    },
+    'svgBase': {
+        'type': 'string',
+        'desc': 'Image only: the original SVG markup a tint is recomputed from. Written '
+                'with svgTint and src; leave all three together',
+    },
+    'svgTint': {
+        'type': 'object',
+        'desc': 'Image only: {mode, color, …} applied to svgBase to produce src',
+    },
 }
 
 
