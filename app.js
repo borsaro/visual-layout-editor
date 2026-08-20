@@ -987,7 +987,9 @@ function startMarquee(ev){
   // at the cursor, not as an unstyled box parsed back as (0,0).
   Object.assign(el.style,{left:sx+'px',top:sy+'px',width:'0px',height:'0px'});
   $('canvas').appendChild(el);
-  marquee={sx,sy,el, additive: ev.shiftKey || ev.metaKey || ev.ctrlKey};
+  // Shift adds to the selection; Cmd is read at the release instead, where it decides
+  // whether the band takes what it touches or only what it encloses.
+  marquee={sx,sy,el, additive: ev.shiftKey};
   document.addEventListener('mousemove', onMarqueeMove); document.addEventListener('mouseup', endMarquee);
 }
 function onMarqueeMove(ev){
@@ -1004,23 +1006,29 @@ function onMarqueeMove(ev){
 let marqueeEndedAt = 0;
 function marqueeJustEnded(){ return performance.now() - marqueeEndedAt < 250; }
 
-function endMarquee(){
+function endMarquee(ev){
   if(!marquee) return;
   marqueeEndedAt = performance.now();
   const m={x:parseFloat(marquee.el.style.left)||0,y:parseFloat(marquee.el.style.top)||0,w:parseFloat(marquee.el.style.width)||0,h:parseFloat(marquee.el.style.height)||0};
   // Locked layers are not grabbable on the canvas, so a rubber band must not pick
   // them up either: dragging across one would otherwise pull it into a selection
   // that cannot be moved.
-  let hits=state.layers.filter(l=> layerVisible(l) && !layerLocked(l) && intersects(m,l)).map(l=>l.id);
+  // Cmd narrows the band to what it encloses whole. A click never moved, so it has
+  // nothing to enclose: there the touch test stands, or clicking would select nothing.
+  const dragged = m.w >= 3 || m.h >= 3;
+  const containOnly = dragged && !!(ev && (ev.metaKey || ev.ctrlKey));
+  const test = containOnly ? contains : intersects;
+  let hits=state.layers.filter(l=> layerVisible(l) && !layerLocked(l) && test(m,l)).map(l=>l.id);
   // A band that never moved is a plain click: it must select the topmost layer under
   // the cursor, not the whole stack the point happens to fall on.
-  if(m.w < 3 && m.h < 3) hits = hits.slice(-1);
+  if(!dragged) hits = hits.slice(-1);
   if(!marquee.additive) state.selectedIds=[];
   hits.forEach(id=>{ if(!state.selectedIds.includes(id)) state.selectedIds.push(id); });
   state.selectedId=state.selectedIds.at(-1)||null;
   marquee.el.remove(); marquee=null; document.removeEventListener('mousemove',onMarqueeMove); document.removeEventListener('mouseup',endMarquee); render();
 }
 function intersects(a,b){ return !(b.x > a.x+a.w || b.x+b.w < a.x || b.y > a.y+a.h || b.y+b.h < a.y); }
+function contains(a,b){ return b.x >= a.x && b.y >= a.y && b.x+b.w <= a.x+a.w && b.y+b.h <= a.y+a.h; }
 
 let fontBrowseHistoryStarted = false;
 
