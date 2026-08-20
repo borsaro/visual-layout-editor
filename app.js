@@ -784,7 +784,7 @@ function startMoveDrag(id, sx, sy){
   const layers = selectedLayers().filter(l => !layerLocked(l));
   if(!layers.length){ render(); return false; }
   pushHistory();
-  drag = { id, handle: null, resizing: false, cropMode: false, freeResizeMode: false, sx, sy,
+  drag = { id, handle: null, resizing: false, cropMode: false, sx, sy,
            originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})),
            box: groupBox(layers) };
   document.addEventListener('mousemove', onLayerMove);
@@ -821,7 +821,6 @@ function startDrag(ev, id, handle=null){
   }
   const resizing = !!handle;
   const cropMode = resizing && (ev.ctrlKey || ev.metaKey || (state.cropMode && target?.type === 'image'));
-  const freeResizeMode = resizing && ev.shiftKey;
   // On corner handles, modifier keys control resize/crop behavior, not selection.
   // If the handle target is not already selected, resize only that layer.
   // Ctrl/Cmd crop must always operate on a single image layer.
@@ -831,7 +830,7 @@ function startDrag(ev, id, handle=null){
   const layers=selectedLayers().filter(l => !layerLocked(l));
   if(!layers.length){ render(); return; }
   pushHistory();
-  drag={ id, handle, resizing, cropMode, freeResizeMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
+  drag={ id, handle, resizing, cropMode, sx:ev.clientX, sy:ev.clientY, originals: layers.map(l=>({id:l.id,x:l.x,y:l.y,w:l.w,h:l.h,crop:l.crop?JSON.parse(JSON.stringify(l.crop)):null,type:l.type,fontSize:l.fontSize,letterSpacing:l.letterSpacing,maskKind:l.maskKind||null,maskSides:l.maskSides,maskPoints:l.maskPoints?JSON.parse(JSON.stringify(l.maskPoints)):null})), box: groupBox(layers) };
   document.addEventListener('mousemove', onLayerMove); document.addEventListener('mouseup', endDrag); render();
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
@@ -936,12 +935,15 @@ function onLayerMove(ev){
     // In crop mode the natural drag keeps the crop's own ratio; Cmd frees it.
     // Outside crop mode Cmd-crop stays free, exactly as before.
     const cropKeepAspect = toggleCrop && !(ev.ctrlKey || ev.metaKey);
-    const freeResizeMode = drag.freeResizeMode || ev.shiftKey;
+    // Shift on a handle keeps the proportions, for one layer or for a whole selection —
+    // the same meaning it has everywhere else. On images, whose plain drag is already
+    // proportional, Alt is what frees the aspect.
+    const freeResizeMode = ev.altKey && !toggleCrop;
     // On text, Cmd scales the type with the box: the plain drag reflows the same
     // wording inside a new box, this one blows the whole block up or down.
     const textScaleMode = single && layer?.type === 'text' && (ev.metaKey || ev.ctrlKey);
-    const keepAspect = single && !freeResizeMode && !cropMode
-      && (layer?.type === 'image' || textScaleMode);
+    const keepAspect = !cropMode && !freeResizeMode
+      && (ev.shiftKey || (single && (layer?.type === 'image' || textScaleMode)));
     if(maskVertexMode){
       applyMaskVertexFromHandle(layer, orig, drag.handle, dx, dy);
     } else if(cropMode){
@@ -950,7 +952,7 @@ function onLayerMove(ev){
       Object.assign(layer, resizeBoxFromHandle(orig, drag.handle, dx, dy, keepAspect));
       if(textScaleMode) scaleTextWithBox(layer, orig);
     } else {
-      const newBox=resizeBoxFromHandle(drag.box, drag.handle, dx, dy, false);
+      const newBox=resizeBoxFromHandle(drag.box, drag.handle, dx, dy, keepAspect);
       const sx=newBox.w/Math.max(1,drag.box.w), sy=newBox.h/Math.max(1,drag.box.h);
       drag.originals.forEach(o=>{ const l=state.layers.find(x=>x.id===o.id); if(!l) return; l.x=newBox.x+(o.x-drag.box.x)*sx; l.y=newBox.y+(o.y-drag.box.y)*sy; l.w=Math.max(10,o.w*sx); l.h=Math.max(10,o.h*sy); });
     }
