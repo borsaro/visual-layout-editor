@@ -1404,6 +1404,7 @@ function loadLayoutObject(data, path=null, localName=null){
   zoomToFit();
   render();
   onLayoutChangedForVariants?.();
+  syncEditQueueUi?.();          // the file on screen changed: so did what the nav says
   Promise.resolve(loadHostFonts?.())
     .then(() => ensureLayoutCustomFonts?.(state.layers))
     .then(() => {

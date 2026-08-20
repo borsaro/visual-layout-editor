@@ -1622,15 +1622,30 @@ function syncEditQueueUi(){
   const nav = $('editQueueNav');
   if(!nav) return;
   const queue = state.editQueue;
-  nav.hidden = !queue?.entries?.length;
-  if(nav.hidden) return;
   const label = $('editQueueLabel');
+  const prev = $('editQueuePrev');
+  const next = $('editQueueNext');
+
+  if(!queue?.entries?.length){
+    // No working set: the open file is a list of one. Keeping the control on screen,
+    // reading 1/1, says where you are instead of leaving a gap that looks like a bug.
+    const name = state.currentLayoutPath || state.loadedJsonFilename;
+    nav.hidden = !name;
+    if(nav.hidden) return;
+    if(label){
+      label.textContent = `1/1 · ${String(name).split('/').pop()}`;
+      label.title = String(name);
+    }
+    if(prev) prev.disabled = true;
+    if(next) next.disabled = true;
+    return;
+  }
+
+  nav.hidden = false;
   if(label){
     label.textContent = `${queue.index + 1}/${queue.entries.length} · ${editQueueEntryLabel(queue.entries[queue.index])}`;
     label.title = queue.entries.map((e, i) => `${i + 1}. ${editQueueEntryLabel(e)}`).join('\n');
   }
-  const prev = $('editQueuePrev');
-  const next = $('editQueueNext');
   if(prev) prev.disabled = queue.index <= 0;
   if(next) next.disabled = queue.index >= queue.entries.length - 1;
 }
