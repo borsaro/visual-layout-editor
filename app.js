@@ -935,15 +935,14 @@ function onLayerMove(ev){
     // In crop mode the natural drag keeps the crop's own ratio; Cmd frees it.
     // Outside crop mode Cmd-crop stays free, exactly as before.
     const cropKeepAspect = toggleCrop && !(ev.ctrlKey || ev.metaKey);
-    // Shift on a handle keeps the proportions, for one layer or for a whole selection —
-    // the same meaning it has everywhere else. On images, whose plain drag is already
-    // proportional, Alt is what frees the aspect.
-    const freeResizeMode = ev.altKey && !toggleCrop;
+    // One rule for every layer type and for a whole selection: a plain drag stretches,
+    // Shift keeps the proportions. Images used to be the exception — proportional on
+    // their own — which is what made Shift mean the opposite thing there.
     // On text, Cmd scales the type with the box: the plain drag reflows the same
-    // wording inside a new box, this one blows the whole block up or down.
+    // wording inside a new box, this one blows the whole block up or down, so it locks
+    // the ratio too — one factor for both sides.
     const textScaleMode = single && layer?.type === 'text' && (ev.metaKey || ev.ctrlKey);
-    const keepAspect = !cropMode && !freeResizeMode
-      && (ev.shiftKey || (single && (layer?.type === 'image' || textScaleMode)));
+    const keepAspect = !cropMode && (ev.shiftKey || textScaleMode);
     if(maskVertexMode){
       applyMaskVertexFromHandle(layer, orig, drag.handle, dx, dy);
     } else if(cropMode){
